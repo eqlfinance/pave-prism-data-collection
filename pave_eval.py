@@ -86,10 +86,10 @@ def aggregate2(
 
     for row in raw_transactions:
         for item in row[0]:
-            #logging.debug(f"\t accounts:{item['accounts']}")
-            #logging.debug(f"\t transactions:{item['transactions'][:10]}\n")
+            #logging.debug(f"\t accounts :{item['accounts']}")
+            #logging.debug(f"\t num transactions:{len(item['transactions'])}\n")
             #account_data["accounts"].extend(item["accounts"])
-            # transaction_data["transactions"].extend(item["transactions"])
+            #transaction_data["transactions"].extend(item["transactions"])
 
             for account in item["accounts"]:
                 if account['account_id'] not in account_ids:
@@ -126,6 +126,7 @@ def aggregate2(
                             "transaction_type": transaction["transaction_type"],
                         }
                     )
+
     return {"accounts": account_data, "transactions": transaction_data}
 
 
@@ -147,7 +148,7 @@ def pave_request(user_id, method, endpoint, payload, params, collection_name, re
         time.sleep(remaining)
 
     res_code = res.status_code
-    logging.info(f"\tResponse code: {res_code}")
+    logging.info(f"\tResponse code: {res_code}, {res.json()=}")
     mongo_collection = mongo_db[collection_name]
 
     if res_code == 200:
@@ -213,6 +214,7 @@ def post_pave_transaction_upload(user_id: str, transactions_dict: dict):
         "end_date": transactions_dict["end_date"],
     }
 
+    logging.info(f"{len(trans['transactions'])=}")
     #res = requests.post(endpoint, json=trans, headers=pave_headers, params=params)
     pave_request(user_id, "post", "transactions", trans, params, "transaction_uploads", "response")
 
@@ -291,7 +293,7 @@ def get_attributes(
 if __name__ == "__main__":
     start = datetime.datetime.now()
 
-    env_user_ids = ""
+    env_user_ids = "aa319d2a-70b5-4019-83a9-733ed5bd0dbc,83dcc8c0-d6ed-4015-97dd-7b6022993f03,aeb83128-fe97-4178-9679-83ac0721195f,2efb959d-52a6-4229-8d82-8978a2cafcd5,27066e18-464a-461c-9d82-5f3c69ef0ac2"
     user_ids = []
     conn = cm.get_postgres_connection()
 
@@ -308,36 +310,38 @@ if __name__ == "__main__":
     for user_id in tqdm(user_ids):
         logging.debug("Eval for user {}".format(user_id))
 
-        last_record = mongo_db.unified_insights.find(
-            filter={"user_id": str(user_id), "response_code": 200}, limit=1
-        ).sort([("date", pymongo.DESCENDING)])
-        # If an eval has been done in the last day skip for now
-        last_record = list(last_record)
-        if len(last_record) > 0 and last_record[0]["date"] > (
-            datetime.datetime.now() - datetime.timedelta(days=1)
-        ):
-            logging.warning(f"\tLast record for {user_id} too recent, skipping...")
-            continue
+#        last_record = mongo_db.unified_insights.find(
+#            filter={"user_id": str(user_id), "response_code": 200}, limit=1
+#        ).sort([("date", pymongo.DESCENDING)])
+#        # If an eval has been done in the last day skip for now
+#        last_record = list(last_record)
+#        if len(last_record) > 0 and last_record[0]["date"] > (
+#            datetime.datetime.now() - datetime.timedelta(days=1)
+#        ):
+#            logging.warning(f"\tLast record for {user_id} too recent, skipping...")
+#            continue
 
         user_data = aggregate2(user_id, conn)
-        logging.info(f"\tAggregated cashflow data")
+        logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
         b_data = user_data["accounts"]
         t_data = user_data["transactions"]
 
         if len(t_data) >= 1000:
+            logging.info("\tCut transactions down to 1000")
             t_data = t_data[:1000]
 
         if len(b_data) == 0 or len(t_data["transactions"]) == 0:
             logging.warning(f"\tEmpty data for user {user_id}, skipping eval...")
             continue
 
+
         post_pave_balance_upload(user_id, b_data)
         post_pave_transaction_upload(user_id, t_data)
         get_pave_balances(user_id)
         get_pave_transactions(user_id)
-        get_unified_insights(user_id)
-        # get_financial_accounts(user_id)
-        get_attributes(user_id)
+        #get_unified_insights(user_id)
+        #get_financial_accounts(user_id)
+        #get_attributes(user_id)
 
     cm.close_postgres_connection(conn)
     end = datetime.datetime.now()

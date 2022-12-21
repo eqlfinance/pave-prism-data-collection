@@ -154,7 +154,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         logging.info("Calculating new cashscore for user: {}".format(user_id))
     else:
         logging.warning(
-            "Cashscore calcaluted recently for user {} -> Score:{} @ {}\n".format(
+            "\tCashscore calcaluted recently for user {} -> Score:{} @ {}\n".format(
                 user_id, 
                 cashscore_data['response']['products']['cashscore'], 
                 cashscore_data['created_at'].strftime('%Y-%m-%d')
@@ -187,11 +187,11 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         date_max["posted_date"]
     ) - datetime.datetime.fromisoformat(date_min["posted_date"])
 
-    logging.info(f"\t{cashflow_data=}\n{delta_time=}")
+    logging.info(f"\t{len(cashflow_data['transactions'])=}\n{delta_time=}")
 
-    if delta_time < datetime.timedelta(days=90):
-        logging.warning("\tLess than 90 days of transaction history")
-        return
+#    if delta_time < datetime.timedelta(days=90):
+#        logging.warning("\tLess than 90 days of transaction history")
+#        return
 
     payload = {
         "customer_id": user_id,
