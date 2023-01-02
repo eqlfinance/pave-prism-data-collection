@@ -110,8 +110,11 @@ def aggregate2(
                             "credit_or_debit": "CREDIT"
                             if float(transaction["amount"]) < 0
                             else "DEBIT",
-                            "posted_date": transaction["date"],
-                            "memo": " ".join(transaction["category"])
+                            "date": transaction["date"],
+                            "memo": transaction["original_description"] if transaction["original_description"] else " ",
+                            "name": transaction["name"] if transaction["name"] else " ",
+                            "pending": transaction["pending"],
+                            "category": " ".join(transaction["category"])
                             if transaction["category"]
                             else ""
                             + " ".join(
@@ -293,7 +296,7 @@ def get_attributes(
 if __name__ == "__main__":
     start = datetime.datetime.now()
 
-    env_user_ids = "aa319d2a-70b5-4019-83a9-733ed5bd0dbc,83dcc8c0-d6ed-4015-97dd-7b6022993f03,aeb83128-fe97-4178-9679-83ac0721195f,2efb959d-52a6-4229-8d82-8978a2cafcd5,27066e18-464a-461c-9d82-5f3c69ef0ac2"
+    env_user_ids = "" # "aa319d2a-70b5-4019-83a9-733ed5bd0dbc,83dcc8c0-d6ed-4015-97dd-7b6022993f03,aeb83128-fe97-4178-9679-83ac0721195f,2efb959d-52a6-4229-8d82-8978a2cafcd5,27066e18-464a-461c-9d82-5f3c69ef0ac2"
     user_ids = []
     conn = cm.get_postgres_connection()
 
@@ -339,9 +342,9 @@ if __name__ == "__main__":
         post_pave_transaction_upload(user_id, t_data)
         get_pave_balances(user_id)
         get_pave_transactions(user_id)
-        #get_unified_insights(user_id)
+        get_unified_insights(user_id)
         #get_financial_accounts(user_id)
-        #get_attributes(user_id)
+        get_attributes(user_id)
 
     cm.close_postgres_connection(conn)
     end = datetime.datetime.now()
