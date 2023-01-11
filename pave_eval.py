@@ -101,17 +101,18 @@ def aggregate2(
                     trans_ids.append(transaction["transaction_id"])
 
                     # print(transaction, "\n")
-
                     transaction_data["transactions"].append(
                         {
                             "transaction_id": transaction["transaction_id"],
                             "account_id": transaction["account_id"],
-                            "amount": abs(float(transaction["amount"])),
-                            "credit_or_debit": "CREDIT"
-                            if float(transaction["amount"]) < 0
-                            else "DEBIT",
+                            "amount": float(transaction["amount"]),
                             "date": transaction["date"],
-                            "memo": transaction["original_description"] if transaction["original_description"] else " ",
+                            "memo": " ".join(
+                                transaction["personal_finance_category"].values()
+                            )
+                            if transaction["personal_finance_category"]
+                            else "",
+                            #"memo": transaction["original_description"] if transaction["original_description"] else " ",
                             "name": transaction["name"] if transaction["name"] else " ",
                             "pending": transaction["pending"],
                             "category": " ".join(transaction["category"])
