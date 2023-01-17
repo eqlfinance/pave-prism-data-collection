@@ -112,7 +112,6 @@ def aggregate2(
                             )
                             if transaction["personal_finance_category"]
                             else "",
-                            #"memo": transaction["original_description"] if transaction["original_description"] else " ",
                             "name": transaction["name"] if transaction["name"] else " ",
                             "pending": transaction["pending"],
                             "category": " ".join(transaction["category"])
@@ -167,17 +166,17 @@ def pave_request(user_id, method, endpoint, payload, params, collection_name, re
             upsert=True
         )
     else:
-        mongo_collection.replace_one(
-            {"user_id": user_id},
-            {
-                "error": res.json(),
-                "user_id": user_id,
-                "response_code": res.status_code,
-                "date": datetime.datetime.now()
-            },
-            upsert=True
-        )
-        logging.info("\tError on {} for user {}\n".format(endpoint, user_id))
+#        mongo_collection.replace_one(
+#            {"user_id": user_id},
+#            {
+#                "error": res.json(),
+#                "user_id": user_id,
+#                "response_code": res.status_code,
+#                "date": datetime.datetime.now()
+#            },
+#            upsert=True
+#        )
+        logging.warning("\tError on {} for user {}\n".format(endpoint, user_id))
 
 
 """
@@ -210,17 +209,19 @@ def post_pave_transaction_upload(user_id: str, transactions_dict: dict):
     logging.debug(f"\tPOST transaction_upload")
     endpoint = f"{pave_base_url}/{user_id}/transactions"
 
-    trans = {"transactions": transactions_dict["transactions"]}
 
-    params = {
-        "resolve_duplicates": True,
-        "start_date": transactions_dict["start_date"],
-        "end_date": transactions_dict["end_date"],
-    }
+    for i in range(0,len(transactions_dict["transactions"]), 1000):
+        trans = {"transactions": transactions_dict["transactions"][i:i+1000]}
 
-    logging.info(f"{len(trans['transactions'])=}")
-    #res = requests.post(endpoint, json=trans, headers=pave_headers, params=params)
-    pave_request(user_id, "post", "transactions", trans, params, "transaction_uploads", "response")
+        params = {
+            "resolve_duplicates": True,
+            "start_date": transactions_dict["start_date"],
+            "end_date": transactions_dict["end_date"],
+        }
+
+        #logging.info(f"{len(trans['transactions'])=}")
+        #res = requests.post(endpoint, json=trans, headers=pave_headers, params=params)
+        pave_request(user_id, "post", "transactions", trans, params, "transaction_uploads", "response")
 
 
 def get_pave_transactions(
@@ -297,7 +298,7 @@ def get_attributes(
 if __name__ == "__main__":
     start = datetime.datetime.now()
 
-    env_user_ids = "" # "aa319d2a-70b5-4019-83a9-733ed5bd0dbc,83dcc8c0-d6ed-4015-97dd-7b6022993f03,aeb83128-fe97-4178-9679-83ac0721195f,2efb959d-52a6-4229-8d82-8978a2cafcd5,27066e18-464a-461c-9d82-5f3c69ef0ac2"
+    env_user_ids = ""
     user_ids = []
     conn = cm.get_postgres_connection()
 
@@ -325,22 +326,17 @@ if __name__ == "__main__":
 #            logging.warning(f"\tLast record for {user_id} too recent, skipping...")
 #            continue
 
-        user_data = aggregate2(user_id, conn)
-        logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
-        b_data = user_data["accounts"]
-        t_data = user_data["transactions"]
-
-        if len(t_data) >= 1000:
-            logging.info("\tCut transactions down to 1000")
-            t_data = t_data[:1000]
-
-        if len(b_data) == 0 or len(t_data["transactions"]) == 0:
-            logging.warning(f"\tEmpty data for user {user_id}, skipping eval...")
-            continue
-
-
-        post_pave_balance_upload(user_id, b_data)
-        post_pave_transaction_upload(user_id, t_data)
+#        user_data = aggregate2(user_id, conn)
+#        logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
+#        b_data = user_data["accounts"]
+#        t_data = user_data["transactions"]
+#
+#        if len(b_data) == 0 or len(t_data["transactions"]) == 0:
+#            logging.warning(f"\tEmpty data for user {user_id}, skipping eval...")
+#            continue
+#
+#        post_pave_transaction_upload(user_id, t_data)
+#        post_pave_balance_upload(user_id, b_data)
         get_pave_balances(user_id)
         get_pave_transactions(user_id)
         get_unified_insights(user_id)
