@@ -67,13 +67,13 @@ def aggregate2(
     )
     link_id_rows = conn.execute(link_select_string).fetchall()
 
-    sql_account_string = f"SELECT data FROM public.plaid_raw_transaction_sets WHERE start_date >= '{start_date_str}'::date AND end_date <= '{end_date_str} 23:59:59'::date "
+    sql_account_string = f"SELECT data FROM public.plaid_raw_transaction_sets " #WHERE start_date >= '{start_date_str}'::date AND end_date <= '{end_date_str} 23:59:59'::date "
 
     if len(link_id_rows) > 1:
         link_ids = tuple([str(x[0]) for x in link_id_rows])
-        sql_account_string += f"AND link_id IN {link_ids}"
+        sql_account_string += f"WHERE link_id IN {link_ids}"
     elif len(link_id_rows) == 1:
-        sql_account_string += f"AND link_id = '{(link_id_rows[0])[0]}'"
+        sql_account_string += f"WHERE link_id = '{(link_id_rows[0])[0]}'"
     else:
         logging.warning(f"\tNo links found for user {user_id}")
         return {"accounts": account_data, "transactions": transaction_data}
@@ -258,11 +258,31 @@ def get_unified_insights(
     params = {
         "start_date": start_date_str,
         "end_date": end_date_str,
-        "with_transactions": False,
+        "with_transactions": True,
     }
 
-    #res = requests.get(endpoint, headers=pave_headers, params=params)
-    pave_request(user_id, "get", "unified_insights", None, params, "unified_insights", "unified_insights")
+    res = requests.get(endpoint, headers=pave_headers, params=params)
+
+    res_code = res.status_code
+    logging.info(f"\tResponse code: {res_code}, {res.json()=}")
+
+    if res_code == 200:
+        for title, object in res.json().items():
+            mongo_collection = mongo_db[title]
+            mongo_collection.replace_one(
+                {"user_id": user_id},
+                {
+                    title: object,
+                    "user_id": user_id,
+                    "response_code": res.status_code,
+                    "date": datetime.datetime.now()
+                },
+                upsert=True
+            )
+    else:
+        logging.warning("\tError on {} for user {}\n".format(endpoint, user_id))
+
+    #pave_request(user_id, "get", "unified_insights", None, params, "unified_insights", "unified_insights")
 
 """
         Financial Accounts
@@ -315,28 +335,29 @@ if __name__ == "__main__":
     for user_id in tqdm(user_ids):
         logging.debug("Eval for user {}".format(user_id))
 
-#        last_record = mongo_db.unified_insights.find(
-#            filter={"user_id": str(user_id), "response_code": 200}, limit=1
-#        ).sort([("date", pymongo.DESCENDING)])
-#        # If an eval has been done in the last day skip for now
-#        last_record = list(last_record)
-#        if len(last_record) > 0 and last_record[0]["date"] > (
-#            datetime.datetime.now() - datetime.timedelta(days=1)
-#        ):
-#            logging.warning(f"\tLast record for {user_id} too recent, skipping...")
-#            continue
+        last_record = mongo_db.transaction_uploads.find(
+            filter={"user_id": str(user_id), "response_code": 200}, limit=1
+        ).sort([("date", pymongo.DESCENDING)])
+        # If an eval has been done in the last day skip for now
+        last_record = list(last_record)
 
-#        user_data = aggregate2(user_id, conn)
-#        logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
-#        b_data = user_data["accounts"]
-#        t_data = user_data["transactions"]
-#
-#        if len(b_data) == 0 or len(t_data["transactions"]) == 0:
-#            logging.warning(f"\tEmpty data for user {user_id}, skipping eval...")
-#            continue
-#
-#        post_pave_transaction_upload(user_id, t_data)
-#        post_pave_balance_upload(user_id, b_data)
+        if len(last_record) > 0 and last_record[0]["date"] > (
+            datetime.datetime.now() - datetime.timedelta(days=10)
+        ):
+            logging.warning(f"\tLast record for {user_id} too recent, skipping uploads...")
+        else:
+            user_data = aggregate2(user_id, conn)
+            logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
+            b_data = user_data["accounts"]
+            t_data = user_data["transactions"]
+
+            if len(b_data) == 0 or len(t_data["transactions"]) == 0:
+                logging.warning(f"\tEmpty data for user {user_id}, skipping eval...")
+                continue
+
+            post_pave_transaction_upload(user_id, t_data)
+            post_pave_balance_upload(user_id, b_data)
+
         get_pave_balances(user_id)
         get_pave_transactions(user_id)
         get_unified_insights(user_id)
