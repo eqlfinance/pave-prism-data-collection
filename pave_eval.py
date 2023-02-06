@@ -336,7 +336,7 @@ if __name__ == "__main__":
     for user_id in tqdm(user_ids):
         logging.debug("Eval for user {}".format(user_id))
 
-        if len(sys.argv) > 0:
+        if len(sys.argv) > 1:
             user_data = aggregate2(user_id, conn)
             logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
             b_data = user_data["accounts"]
