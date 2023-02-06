@@ -2,6 +2,7 @@ import base64
 import datetime
 import dotenv
 import os
+import sys
 import pathlib
 import requests
 import json
@@ -47,7 +48,7 @@ def aggregate2(
     user_id: str,
     conn: sqlalchemy.engine.Connection,
     start_date_str: str = (
-        datetime.datetime.now() - datetime.timedelta(days=180)
+        datetime.datetime.now() - datetime.timedelta(days=365*10)
     ).strftime("%Y-%m-%d"),
     end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
 ):
@@ -191,7 +192,7 @@ def post_pave_balance_upload(user_id: str, balances: dict):
 def get_pave_balances(
     user_id: str,
     start_date_str: str = (
-        datetime.datetime.now() - datetime.timedelta(days=180)
+        datetime.datetime.now() - datetime.timedelta(days=365*10)
     ).strftime("%Y-%m-%d"),
     end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
 ):
@@ -227,7 +228,7 @@ def post_pave_transaction_upload(user_id: str, transactions_dict: dict):
 def get_pave_transactions(
     user_id: str,
     start_date_str: str = (
-        datetime.datetime.now() - datetime.timedelta(days=180)
+        datetime.datetime.now() - datetime.timedelta(days=365*10)
     ).strftime("%Y-%m-%d"),
     end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
 ):
@@ -248,7 +249,7 @@ def get_pave_transactions(
 def get_unified_insights(
     user_id: str,
     start_date_str: str = (
-        datetime.datetime.now() - datetime.timedelta(days=180)
+        datetime.datetime.now() - datetime.timedelta(days=365*10)
     ).strftime("%Y-%m-%d"),
     end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
 ):
@@ -335,17 +336,7 @@ if __name__ == "__main__":
     for user_id in tqdm(user_ids):
         logging.debug("Eval for user {}".format(user_id))
 
-        last_record = mongo_db.transaction_uploads.find(
-            filter={"user_id": str(user_id), "response_code": 200}, limit=1
-        ).sort([("date", pymongo.DESCENDING)])
-        # If an eval has been done in the last day skip for now
-        last_record = list(last_record)
-
-        if len(last_record) > 0 and last_record[0]["date"] > (
-            datetime.datetime.now() - datetime.timedelta(days=10)
-        ):
-            logging.warning(f"\tLast record for {user_id} too recent, skipping uploads...")
-        else:
+        if len(sys.argv) > 0:
             user_data = aggregate2(user_id, conn)
             logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
             b_data = user_data["accounts"]
