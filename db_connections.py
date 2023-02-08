@@ -60,3 +60,6 @@ class Connection_Manager:
 
 	def get_pymongo_table(self, table_name:str):
 		return self.mongo_client[table_name]
+
+    def close_pymongo_connection(self):
+        self.mongo_client.close()
