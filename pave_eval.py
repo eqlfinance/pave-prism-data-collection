@@ -18,33 +18,8 @@ import logging
 import time
 from db_connections import Connection_Manager
 
-logging.basicConfig(
-    filename="pave-eval-"
-    + datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    + ".log",
-    format="%(name)s @ %(asctime)s: %(message)s",
-    datefmt="%I:%M:%S",
-    level=logging.DEBUG,
-)
 
-
-secret_manager_client = secretmanager.SecretManagerServiceClient()
-
-pave_str = secret_manager_client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/pave-prism-info/versions/latest"
-).payload.data.decode("UTF-8")
-
-pave_data = json.loads(pave_str)
-pave_base_url = pave_data["PAVE_HOST"]
-pave_x_api_key = pave_data["PAVE_X_API_KEY"]
-pave_headers = {"Content-Type": "application/plaid+json", "x-api-key": pave_x_api_key}
-
-
-cm = Connection_Manager()
-mongo_db = cm.get_pymongo_table("pave")
-
-
-def aggregate2(
+def aggregate_user_data(
     user_id: str,
     conn: sqlalchemy.engine.Connection,
     start_date_str: str = (
@@ -52,7 +27,7 @@ def aggregate2(
     ).strftime("%Y-%m-%d"),
     end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
 ):
-
+    # Set up the final objects that will be passed to pave
     account_data = {
         "run_timestamp": datetime.datetime.now().isoformat(),
         "accounts": [],
@@ -63,12 +38,13 @@ def aggregate2(
         "end_date": end_date_str,
     }
 
+    # Get all plaid links that are owned by user_id, then find all the transactions associated with that link
     link_select_string = (
         f"SELECT id FROM public.plaid_links WHERE user_id = '{user_id}'"
     )
     link_id_rows = conn.execute(link_select_string).fetchall()
 
-    sql_account_string = f"SELECT data FROM public.plaid_raw_transaction_sets " #WHERE start_date >= '{start_date_str}'::date AND end_date <= '{end_date_str} 23:59:59'::date "
+    sql_account_string = f"SELECT data FROM public.plaid_raw_transaction_sets "
 
     if len(link_id_rows) > 1:
         link_ids = tuple([str(x[0]) for x in link_id_rows])
@@ -82,15 +58,14 @@ def aggregate2(
     sql_account_string += " ORDER BY created_at DESC"
 
     raw_transactions = conn.execute(sql_account_string).fetchall()
+
+    # Collectors for the account and transaction ids to make sure there are no duplicates
+    # Transactions are duplicated across raw_transaction_sets
     trans_ids = []
     account_ids = []
 
     for row in raw_transactions:
         for item in row[0]:
-            #logging.debug(f"\t accounts :{item['accounts']}")
-            #logging.debug(f"\t num transactions:{len(item['transactions'])}\n")
-            #account_data["accounts"].extend(item["accounts"])
-            #transaction_data["transactions"].extend(item["transactions"])
 
             for account in item["accounts"]:
                 if account['account_id'] not in account_ids:
@@ -101,7 +76,6 @@ def aggregate2(
                 if transaction["transaction_id"] not in trans_ids:
                     trans_ids.append(transaction["transaction_id"])
 
-                    # print(transaction, "\n")
                     transaction_data["transactions"].append(
                         {
                             "transaction_id": transaction["transaction_id"],
@@ -135,25 +109,25 @@ def aggregate2(
 
 
 
-def pave_request(user_id, method, endpoint, payload, params, collection_name, response_column_name):
-    logging.info("user_id:{}\n\tRequest: /{}, inserting response into: {}".format(user_id, endpoint, response_column_name))
-    start = time.time()
+def handle_pave_request(user_id:str, method:str, endpoint:str, payload:dict, headers:dict, params:dict):
+    logging.info("user_id:{}\n\tRequest: {} /{}".format(user_id, method.upper(), endpoint))
 
     if method == "get":
-        res = requests.get(f"{pave_base_url}/{user_id}/{endpoint}", json=payload, headers=pave_headers, params=params)
+        res = requests.get(f"{endpoint}", json=payload, headers=headers, params=params)
     elif method == "post":
-        res = requests.post(f"{pave_base_url}/{user_id}/{endpoint}", json=payload, headers=pave_headers, params=params)
+        res = requests.post(f"{endpoint}", json=payload, headers=headers, params=params)
     else:
         raise ValueError("Method not understood {}".format(method))
 
-    end = time.time()
-    remaining = start + 1.5 - end
-    if remaining > 0:
-        time.sleep(remaining)
-
     res_code = res.status_code
-    logging.info(f"\tResponse code: {res_code}, {res.json()=}")
+    logging.info(f"\tResponse: {res_code} {res.json()=}")
+    return res
+
+
+def insert_response_into_db(user_id:str, res, mongo_db, collection_name:str, response_column_name:str):
+    logging.info("Inserting response into: {}.{}".format(collection_name, response_column_name))
     mongo_collection = mongo_db[collection_name]
+    res_code = res.status_code
 
     if res_code == 200:
         mongo_collection.replace_one(
@@ -167,161 +141,42 @@ def pave_request(user_id, method, endpoint, payload, params, collection_name, re
             upsert=True
         )
     else:
-#        mongo_collection.replace_one(
-#            {"user_id": user_id},
-#            {
-#                "error": res.json(),
-#                "user_id": user_id,
-#                "response_code": res.status_code,
-#                "date": datetime.datetime.now()
-#            },
-#            upsert=True
-#        )
-        logging.warning("\tError on {} for user {}\n".format(endpoint, user_id))
+        logging.warning("\tCan't insert: {} {}\n".format(res_code, res.json()))
 
+def main():
+    # Set up the logging instance
+    logging.basicConfig(
+        filename="pave-eval-"
+        + datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        + ".log",
+        format="%(name)s @ %(asctime)s: %(message)s",
+        datefmt="%I:%M:%S",
+        level=logging.DEBUG,
+    )
 
-"""
-        BALANCES
-"""
+    # Get pave secret values
+    secret_manager_client = secretmanager.SecretManagerServiceClient()
+    pave_str = secret_manager_client.access_secret_version(
+        name=f"projects/eql-data-processing/secrets/pave-prism-info/versions/latest"
+    ).payload.data.decode("UTF-8")
 
+    pave_data = json.loads(pave_str)
+    pave_base_url = pave_data["PAVE_HOST"]
+    pave_x_api_key = pave_data["PAVE_X_API_KEY"]
+    pave_headers = {"Content-Type": "application/plaid+json", "x-api-key": pave_x_api_key}
 
-def post_pave_balance_upload(user_id: str, balances: dict):
-    pave_request(user_id, "post", "balances", balances, None, "balance_uploads", "response")
+    # Establish connection to mongo db
+    cm = Connection_Manager()
+    mongo_db = cm.get_pymongo_table("pave")
 
+    process_start = datetime.datetime.now()
 
-def get_pave_balances(
-    user_id: str,
-    start_date_str: str = (
-        datetime.datetime.now() - datetime.timedelta(days=365*10)
-    ).strftime("%Y-%m-%d"),
-    end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
-):
+    # Open connection to postgres db
+    conn = cm.get_postgres_connection()
 
-    params = {"start_date": start_date_str, "end_date": end_date_str}
-    pave_request(user_id, "get", "balances", None, params, "balances", "balances")
-
-
-"""
-        TRANSACTIONS
-"""
-
-
-def post_pave_transaction_upload(user_id: str, transactions_dict: dict):
-    logging.debug(f"\tPOST transaction_upload")
-    endpoint = f"{pave_base_url}/{user_id}/transactions"
-
-
-    for i in range(0,len(transactions_dict["transactions"]), 1000):
-        trans = {"transactions": transactions_dict["transactions"][i:i+1000]}
-
-        params = {
-            "resolve_duplicates": True,
-            "start_date": transactions_dict["start_date"],
-            "end_date": transactions_dict["end_date"],
-        }
-
-        #logging.info(f"{len(trans['transactions'])=}")
-        #res = requests.post(endpoint, json=trans, headers=pave_headers, params=params)
-        pave_request(user_id, "post", "transactions", trans, params, "transaction_uploads", "response")
-
-
-def get_pave_transactions(
-    user_id: str,
-    start_date_str: str = (
-        datetime.datetime.now() - datetime.timedelta(days=365*10)
-    ).strftime("%Y-%m-%d"),
-    end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
-):
-
-    logging.debug(f"\tGET pave_transactions")
-    params = {"start_date": start_date_str, "end_date": end_date_str}
-    endpoint = f"{pave_base_url}/{user_id}/transactions"
-
-    #res = requests.get(endpoint, params=params, headers=pave_headers)
-    pave_request(user_id, "get", "transactions", None, params, "transactions", "transactions")
-
-
-"""
-        Unified Insights
-"""
-
-
-def get_unified_insights(
-    user_id: str,
-    start_date_str: str = (
-        datetime.datetime.now() - datetime.timedelta(days=365*10)
-    ).strftime("%Y-%m-%d"),
-    end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
-):
-
-    logging.debug(f"\tGET unified_insights")
-    endpoint = f"{pave_base_url}/{user_id}/unified_insights"
-    params = {
-        "start_date": start_date_str,
-        "end_date": end_date_str,
-        "with_transactions": True,
-    }
-
-    res = requests.get(endpoint, headers=pave_headers, params=params)
-
-    res_code = res.status_code
-    logging.info(f"\tResponse code: {res_code}, {res.json()=}")
-
-    if res_code == 200:
-        for title, object in res.json().items():
-            mongo_collection = mongo_db[title]
-            mongo_collection.replace_one(
-                {"user_id": user_id},
-                {
-                    title: object,
-                    "user_id": user_id,
-                    "response_code": res.status_code,
-                    "date": datetime.datetime.now()
-                },
-                upsert=True
-            )
-    else:
-        logging.warning("\tError on {} for user {}\n".format(endpoint, user_id))
-
-    #pave_request(user_id, "get", "unified_insights", None, params, "unified_insights", "unified_insights")
-
-"""
-        Financial Accounts
-"""
-
-
-def get_financial_accounts(user_id: str):
-    logging.debug(f"\tGET financial_accounts")
-    endpoint = f"{pave_base_url}/{user_id}/financial_accounts"
-
-    #res = requests.get(endpoint, headers=pave_headers)
-
-
-"""
-        Attributes
-"""
-
-
-def get_attributes(
-    user_id: str, date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
-):
-    logging.debug(f"\tGET attributes")
-    endpoint = f"{pave_base_url}/{user_id}/attributes"
-
-    params = {
-        "date": date_str,
-    }
-
-    #res = requests.get(endpoint, headers=pave_headers, params=params)
-    pave_request(user_id, "get", "attributes", None, params, "attributes", "attributes")
-
-
-if __name__ == "__main__":
-    start = datetime.datetime.now()
-
+    # For testing: gets specific user ids from a provided env for ad hoc evals
     env_user_ids = ""
     user_ids = []
-    conn = cm.get_postgres_connection()
 
     if env_user_ids != "":
         user_ids = env_user_ids.split(",")
@@ -332,29 +187,93 @@ if __name__ == "__main__":
         user_ids = [str(row[0]) for row in rows]
         logging.debug("Running evals for all users...\n")
 
-
+    # Loop through the users (default all of them) and run eval
     for user_id in tqdm(user_ids):
         logging.debug("Eval for user {}".format(user_id))
 
+        # If this script is run with a dummy argument, the eval will post all transaction and balance data to pave
         if len(sys.argv) > 1:
-            user_data = aggregate2(user_id, conn)
+            user_data = aggregate_user_data(user_id, conn)
             logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
-            b_data = user_data["accounts"]
-            t_data = user_data["transactions"]
+            balance_data = user_data["accounts"]
+            transaction_data = user_data["transactions"]
 
-            if len(b_data) == 0 or len(t_data["transactions"]) == 0:
+            if len(balance_data) == 0 or len(transaction_data["transactions"]) == 0:
                 logging.warning(f"\tEmpty data for user {user_id}, skipping eval...")
                 continue
 
-            post_pave_transaction_upload(user_id, t_data)
-            post_pave_balance_upload(user_id, b_data)
+            # post_pave_transaction_upload(user_id, transaction_data)
+            # Upload transaction data
+            for i in range(0,len(transaction_data["transactions"]), 1000):
+                trans = {"transactions": transaction_data["transactions"][i:i+1000]}
+                params = {
+                    "resolve_duplicates": True,
+                    "start_date": transaction_data["start_date"],
+                    "end_date": transaction_data["end_date"],
+                }
+                response = handle_pave_request(user_id=user_id, method="post", endpoint=f"{pave_base_url}/{user_id}/transactions", 
+                            payload=trans, headers=pave_headers, params=params)
+                insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="transaction_uploads", response_column_name="response")
 
-        get_pave_balances(user_id)
-        get_pave_transactions(user_id)
-        get_unified_insights(user_id)
-        #get_financial_accounts(user_id)
-        get_attributes(user_id)
+            # post_pave_balance_upload(user_id, balance_data)
+            # Upload balance data
+            response = handle_pave_request(user_id=user_id, method="post", endpoint=f"{pave_base_url}/{user_id}/balances", 
+                            payload=balance_data, headers=pave_headers, params=None)
+            insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="balnace_uploads", response_column_name="response")
 
+        # These provide the date ranges for pave
+        start_date_str = (datetime.datetime.now() - datetime.timedelta(days=365*10)).strftime("%Y-%m-%d")
+        end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
+
+        # get_pave_balances(user_id)
+        # Store the balance data from pave
+        params = {"start_date": start_date_str, "end_date": end_date_str}
+        response = handle_pave_request(user_id=user_id, method="get", endpoint=f"{pave_base_url}/{user_id}/balances", 
+                            payload=None, headers=pave_headers, params=params)
+        insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="balances", response_column_name="balances")
+
+
+        # get_pave_transactions(user_id)
+        # Store the transaction data from pave
+        response = handle_pave_request(user_id=user_id, method="get", endpoint=f"{pave_base_url}/{user_id}/transactions", 
+                            payload=None, headers=pave_headers, params=params)
+        insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="transactions", response_column_name="transactions")
+
+        # get_unified_insights(user_id)
+        # Store the transaction data from pave
+        params = {"start_date": start_date_str, "end_date": end_date_str, "with_transactions": True}
+        response = handle_pave_request(user_id=user_id, method="get", endpoint=f"{pave_base_url}/{user_id}/unified_insights", 
+                            payload=None, headers=pave_headers, params=params)
+
+        if response.status_code == 200:
+            for title, object in response.json().items():
+                logging.info("Inserting response into: {}".format(title))
+                mongo_collection = mongo_db[title]
+                mongo_collection.replace_one(
+                    {"user_id": user_id},
+                    {
+                        title: object,
+                        "user_id": user_id,
+                        "response_code": response.status_code,
+                        "date": datetime.datetime.now()
+                    },
+                    upsert=True
+                )
+        else:
+            logging.warning("\tCan't insert: {} {}\n".format(response.status_code, response.json()))
+            insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="attributes", response_column_name="attributes")
+
+        # get_attributes(user_id)
+        # Store the attribute data from pave
+        response = handle_pave_request(user_id=user_id, method="get", endpoint=f"{pave_base_url}/{user_id}/unified_insights", 
+                            payload=None, headers=pave_headers, params=params)
+
+    # Close db connections
+    cm.close_pymongo_connection()
     cm.close_postgres_connection(conn)
-    end = datetime.datetime.now()
-    logging.info(f"\nTotal runtime: {end-start}")
+
+    process_end = datetime.datetime.now()
+    logging.info(f"\nTotal runtime: {process_end-process_start}")
+
+if __name__ == "__main__":
+    main()
