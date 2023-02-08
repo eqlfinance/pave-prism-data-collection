@@ -212,7 +212,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
     response = convert_nans(res.json())
     #logging.debug(f"\t{response=}")
 
-    mongo_db.responses.replace_one(
+    mongo_db.responses.insert_one(
         {
                 "user_id": user_id
         },
@@ -232,7 +232,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         categories = response["products"]["categories"]["result"]
         income = response["products"]["income"]["result"]
 
-        mongo_db.cashscores.replace_one(
+        mongo_db.cashscores.insert_one(
             {
                 "user_id": user_id
             },
@@ -244,7 +244,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
             upsert=True
         )
 
-        mongo_db.insights.replace_one(
+        mongo_db.insights.insert_one(
             {
                 "user_id": user_id
             },
@@ -256,7 +256,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
             upsert=True
         )
 
-        mongo_db.categories.replace_one(
+        mongo_db.categories.insert_one(
             {
                 "user_id": user_id
             },
@@ -268,7 +268,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
             upsert=True
         )
 
-        mongo_db.incomes.replace_one(
+        mongo_db.incomes.insert_one(
             {
                 "user_id": user_id
             },
