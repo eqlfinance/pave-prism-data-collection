@@ -1,29 +1,21 @@
-import base64
 import datetime
-import dotenv
-import os
 import sys
-import pathlib
 import requests
 import json
-from json import JSONDecodeError
-import pymongo
 import sqlalchemy
-from google.cloud.sql.connector import Connector
-from google.oauth2 import service_account
 from google.cloud import secretmanager
-from cryptography.fernet import Fernet, MultiFernet
 from tqdm import tqdm
 import logging
-import time
 from db_connections import Connection_Manager
+import time
+import os
 
 
 def aggregate_user_data(
     user_id: str,
     conn: sqlalchemy.engine.Connection,
     start_date_str: str = (
-        datetime.datetime.now() - datetime.timedelta(days=365*10)
+        datetime.datetime.now() - datetime.timedelta(days=365 * 10)
     ).strftime("%Y-%m-%d"),
     end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
 ):
@@ -66,9 +58,8 @@ def aggregate_user_data(
 
     for row in raw_transactions:
         for item in row[0]:
-
             for account in item["accounts"]:
-                if account['account_id'] not in account_ids:
+                if account["account_id"] not in account_ids:
                     account_ids.append(account["account_id"])
                     account_data["accounts"].append(account)
 
@@ -89,14 +80,7 @@ def aggregate_user_data(
                             else "",
                             "name": transaction["name"] if transaction["name"] else " ",
                             "pending": transaction["pending"],
-                            "category": " ".join(transaction["category"])
-                            if transaction["category"]
-                            else ""
-                            + " ".join(
-                                transaction["personal_finance_category"].values()
-                            )
-                            if transaction["personal_finance_category"]
-                            else "",
+                            "category": transaction["category"],
                             "iso_currency_code": transaction["iso_currency_code"],
                             "authorized_date": transaction["authorized_date"],
                             "merchant_name": transaction["merchant_name"],
@@ -108,9 +92,18 @@ def aggregate_user_data(
     return {"accounts": account_data, "transactions": transaction_data}
 
 
-
-def handle_pave_request(user_id:str, method:str, endpoint:str, payload:dict, headers:dict, params:dict):
-    logging.info("user_id:{}\n\tRequest: {} /{}".format(user_id, method.upper(), endpoint))
+def handle_pave_request(
+    user_id: str,
+    method: str,
+    endpoint: str,
+    payload: dict,
+    headers: dict,
+    params: dict,
+    last_wait: float = 0,
+):
+    logging.info(
+        "user_id:{}\n\tRequest: {} /{}".format(user_id, method.upper(), endpoint)
+    )
 
     if method == "get":
         res = requests.get(f"{endpoint}", json=payload, headers=headers, params=params)
@@ -121,11 +114,24 @@ def handle_pave_request(user_id:str, method:str, endpoint:str, payload:dict, hea
 
     res_code = res.status_code
     logging.info(f"\tResponse: {res_code} {res.json()=}")
-    return res
+
+    if res_code == 429:
+        sleep = 1 if last_wait == 0 else last_wait * 2
+        logging.error(f"Request limit reached, waiting {sleep} second(s)")
+        time.sleep(sleep)
+        return handle_pave_request(
+            user_id, method, endpoint, payload, headers, params, sleep
+        )
+    else:
+        return res
 
 
-def insert_response_into_db(user_id:str, res, mongo_db, collection_name:str, response_column_name:str):
-    logging.info("Inserting response into: {}.{}".format(collection_name, response_column_name))
+def insert_response_into_db(
+    user_id: str, res, mongo_db, collection_name: str, response_column_name: str
+):
+    logging.info(
+        "Inserting response into: {}.{}".format(collection_name, response_column_name)
+    )
     mongo_collection = mongo_db[collection_name]
     res_code = res.status_code
 
@@ -136,12 +142,13 @@ def insert_response_into_db(user_id:str, res, mongo_db, collection_name:str, res
                 response_column_name: res.json(),
                 "user_id": user_id,
                 "response_code": res.status_code,
-                "date": datetime.datetime.now()
+                "date": datetime.datetime.now(),
             },
-            upsert=True
+            upsert=True,
         )
     else:
         logging.warning("\tCan't insert: {} {}\n".format(res_code, res.json()))
+
 
 def main():
     # Set up the logging instance
@@ -163,7 +170,10 @@ def main():
     pave_data = json.loads(pave_str)
     pave_base_url = pave_data["PAVE_HOST"]
     pave_x_api_key = pave_data["PAVE_X_API_KEY"]
-    pave_headers = {"Content-Type": "application/plaid+json", "x-api-key": pave_x_api_key}
+    pave_headers = {
+        "Content-Type": "application/plaid+json",
+        "x-api-key": pave_x_api_key,
+    }
 
     # Establish connection to mongo db
     cm = Connection_Manager()
@@ -175,7 +185,7 @@ def main():
     conn = cm.get_postgres_connection()
 
     # For testing: gets specific user ids from a provided env for ad hoc evals
-    env_user_ids = ""
+    env_user_ids = os.getenv("PAVE_EVAL_USER_IDS", "")
     user_ids = []
 
     if env_user_ids != "":
@@ -194,7 +204,9 @@ def main():
         # If this script is run with a dummy argument, the eval will post all transaction and balance data to pave
         if len(sys.argv) > 1:
             user_data = aggregate_user_data(user_id, conn)
-            logging.info(f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}")
+            logging.info(
+                f"\tAggregated data: {len(user_data['accounts']['accounts'])=}, {len(user_data['transactions']['transactions'])=}"
+            )
             balance_data = user_data["accounts"]
             transaction_data = user_data["transactions"]
 
@@ -202,48 +214,102 @@ def main():
                 logging.warning(f"\tEmpty data for user {user_id}, skipping eval...")
                 continue
 
-            # post_pave_transaction_upload(user_id, transaction_data)
             # Upload transaction data
-            for i in range(0,len(transaction_data["transactions"]), 1000):
-                trans = {"transactions": transaction_data["transactions"][i:i+1000]}
+            for i in range(0, len(transaction_data["transactions"]), 1000):
+                trans = {"transactions": transaction_data["transactions"][i : i + 1000]}
                 params = {
                     "resolve_duplicates": True,
                     "start_date": transaction_data["start_date"],
                     "end_date": transaction_data["end_date"],
                 }
-                response = handle_pave_request(user_id=user_id, method="post", endpoint=f"{pave_base_url}/{user_id}/transactions", 
-                            payload=trans, headers=pave_headers, params=params)
-                insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="transaction_uploads", response_column_name="response")
+                response = handle_pave_request(
+                    user_id=user_id,
+                    method="post",
+                    endpoint=f"{pave_base_url}/{user_id}/transactions",
+                    payload=trans,
+                    headers=pave_headers,
+                    params=params,
+                )
+                insert_response_into_db(
+                    user_id=user_id,
+                    res=response,
+                    mongo_db=mongo_db,
+                    collection_name="transaction_uploads",
+                    response_column_name="response",
+                )
 
-            # post_pave_balance_upload(user_id, balance_data)
             # Upload balance data
-            response = handle_pave_request(user_id=user_id, method="post", endpoint=f"{pave_base_url}/{user_id}/balances", 
-                            payload=balance_data, headers=pave_headers, params=None)
-            insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="balnace_uploads", response_column_name="response")
+            response = handle_pave_request(
+                user_id=user_id,
+                method="post",
+                endpoint=f"{pave_base_url}/{user_id}/balances",
+                payload=balance_data,
+                headers=pave_headers,
+                params=None,
+            )
+            insert_response_into_db(
+                user_id=user_id,
+                res=response,
+                mongo_db=mongo_db,
+                collection_name="balnace_uploads",
+                response_column_name="response",
+            )
 
         # These provide the date ranges for pave
-        start_date_str = (datetime.datetime.now() - datetime.timedelta(days=365*10)).strftime("%Y-%m-%d")
+        start_date_str = (
+            datetime.datetime.now() - datetime.timedelta(days=365 * 10)
+        ).strftime("%Y-%m-%d")
         end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
 
-        # get_pave_balances(user_id)
         # Store the balance data from pave
         params = {"start_date": start_date_str, "end_date": end_date_str}
-        response = handle_pave_request(user_id=user_id, method="get", endpoint=f"{pave_base_url}/{user_id}/balances", 
-                            payload=None, headers=pave_headers, params=params)
-        insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="balances", response_column_name="balances")
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/balances",
+            payload=None,
+            headers=pave_headers,
+            params=params,
+        )
+        insert_response_into_db(
+            user_id=user_id,
+            res=response,
+            mongo_db=mongo_db,
+            collection_name="balances",
+            response_column_name="balances",
+        )
 
-
-        # get_pave_transactions(user_id)
         # Store the transaction data from pave
-        response = handle_pave_request(user_id=user_id, method="get", endpoint=f"{pave_base_url}/{user_id}/transactions", 
-                            payload=None, headers=pave_headers, params=params)
-        insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="transactions", response_column_name="transactions")
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/transactions",
+            payload=None,
+            headers=pave_headers,
+            params=params,
+        )
+        insert_response_into_db(
+            user_id=user_id,
+            res=response,
+            mongo_db=mongo_db,
+            collection_name="transactions",
+            response_column_name="transactions",
+        )
 
-        # get_unified_insights(user_id)
-        # Store the transaction data from pave
-        params = {"start_date": start_date_str, "end_date": end_date_str, "with_transactions": True}
-        response = handle_pave_request(user_id=user_id, method="get", endpoint=f"{pave_base_url}/{user_id}/unified_insights", 
-                            payload=None, headers=pave_headers, params=params)
+        # Store the unified insights data from pave
+        params = {
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "with_transactions": True,
+        }
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/unified_insights",
+            payload=None,
+            headers=pave_headers,
+            params=params,
+        )
 
         if response.status_code == 200:
             for title, object in response.json().items():
@@ -255,18 +321,33 @@ def main():
                         title: object,
                         "user_id": user_id,
                         "response_code": response.status_code,
-                        "date": datetime.datetime.now()
+                        "date": datetime.datetime.now(),
                     },
-                    upsert=True
+                    upsert=True,
                 )
         else:
-            logging.warning("\tCan't insert: {} {}\n".format(response.status_code, response.json()))
-            insert_response_into_db(user_id=user_id, res=response, mongo_db=mongo_db, collection_name="attributes", response_column_name="attributes")
+            logging.warning(
+                "\tCan't insert: {} {}\n".format(response.status_code, response.json())
+            )
+            
 
-        # get_attributes(user_id)
         # Store the attribute data from pave
-        response = handle_pave_request(user_id=user_id, method="get", endpoint=f"{pave_base_url}/{user_id}/unified_insights", 
-                            payload=None, headers=pave_headers, params=params)
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/attributes",
+            payload=None,
+            headers=pave_headers,
+            params=None,
+        )
+
+        insert_response_into_db(
+            user_id=user_id,
+            res=response,
+            mongo_db=mongo_db,
+            collection_name="attributes",
+            response_column_name="attributes",
+        )
 
     # Close db connections
     cm.close_pymongo_connection()
@@ -274,6 +355,7 @@ def main():
 
     process_end = datetime.datetime.now()
     logging.info(f"\nTotal runtime: {process_end-process_start}")
+
 
 if __name__ == "__main__":
     main()
