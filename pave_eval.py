@@ -329,16 +329,16 @@ def main():
             logging.warning(
                 "\tCan't insert: {} {}\n".format(response.status_code, response.json())
             )
-            
 
         # Store the attribute data from pave
+        params = {"date": end_date_str}
         response = handle_pave_request(
             user_id=user_id,
             method="get",
             endpoint=f"{pave_base_url}/{user_id}/attributes",
             payload=None,
             headers=pave_headers,
-            params=None,
+            params=params,
         )
 
         insert_response_into_db(
