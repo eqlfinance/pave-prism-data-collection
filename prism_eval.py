@@ -210,7 +210,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
     )
     res = requests.post(endpoint, data=json.dumps(payload), headers=headers)
     response = convert_nans(res.json())
-    #logging.debug(f"\t{response=}")
+    logging.debug(f"\t{response=}")
 
     mongo_db.responses.insert_one(
         {
@@ -221,8 +221,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
             "status_code": res.status_code,
             "response": response,
             "user_id": user_id,
-        },
-        upsert=True
+        }
     )
 
 
@@ -240,8 +239,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
                 "created_at": datetime.datetime.now(),
                 "cashscore": cashscore,
                 "user_id": user_id,
-            },
-            upsert=True
+            }
         )
 
         mongo_db.insights.insert_one(
@@ -252,8 +250,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
                 "created_at": datetime.datetime.now(),
                 "insights": insights,
                 "user_id": user_id,
-            },
-            upsert=True
+            }
         )
 
         mongo_db.categories.insert_one(
@@ -264,8 +261,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
                 "created_at": datetime.datetime.now(),
                 "categories": categories,
                 "user_id": user_id,
-            },
-            upsert=True
+            }
         )
 
         mongo_db.incomes.insert_one(
@@ -276,8 +272,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
                 "created_at": datetime.datetime.now(),
                 "income": income,
                 "user_id": user_id,
-            },
-            upsert=True
+            }
         )
 
         logging.debug("Inserted into tables!")

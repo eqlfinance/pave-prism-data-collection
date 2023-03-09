@@ -251,7 +251,7 @@ def main():
                 user_id=user_id,
                 res=response,
                 mongo_db=mongo_db,
-                collection_name="balnace_uploads",
+                collection_name="balance_uploads",
                 response_column_name="response",
             )
 
