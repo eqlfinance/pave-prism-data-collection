@@ -13,14 +13,11 @@ from google.cloud import secretmanager
 import pymongo
 from tqdm import tqdm
 import logging
-
-
+from logging.handlers import RotatingFileHandler
 from db_connections import Connection_Manager
 
 logging.basicConfig(
-    filename="prism-eval-"
-    + datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    + ".log",
+    handlers=[RotatingFileHandler("prism-eval.log", maxBytes= 1024 ** 1, backupCount=2, mode='a')],
     format="%(name)s @ %(asctime)s: %(message)s",
     datefmt="%I:%M:%S",
     level=logging.DEBUG,
