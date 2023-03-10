@@ -17,11 +17,17 @@ import construct_env
 
 from google.cloud import secretmanager
 
+is_stage = False
+if len(sys.argv) > 0 and sys.argv[0] == "stage":
+    is_stage = True
+    sys.argv.pop(0)  
+    
+    print(list(sys.argv))
 
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
 keys = secret_manager_client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/pave-agent-decryption-keys/versions/latest"
+    name=f"projects/eql-data-processing{'-stage' if is_stage else ''}/secrets/pave-agent-decryption-keys/versions/latest"
 ).payload.data.decode("UTF-8")
 keys = json.loads(keys)["KEYS"]
 
@@ -149,7 +155,7 @@ def main():
 
         # Get pave secret values
         pave_str = secret_manager_client.access_secret_version(
-            name=f"projects/eql-data-processing/secrets/pave-prism-info/versions/latest"
+            name=f"projects/eql-data-processing{'-stage' if is_stage else ''}/secrets/pave-prism-info/versions/latest"
         ).payload.data.decode("UTF-8")
 
         pave_data = json.loads(pave_str)
