@@ -1,23 +1,22 @@
-import base64
 import json
 import math
-import os
-import pathlib
-from typing import Dict
-import sqlalchemy
-import dotenv
 import requests
 import datetime
-from google.cloud.sql.connector import Connector
-from google.cloud import secretmanager
-import pymongo
-from tqdm import tqdm
 import logging
 from logging.handlers import RotatingFileHandler
+
+from typing import Dict
+import sqlalchemy
+from tqdm import tqdm
+
 from db_connections import Connection_Manager
 
+from google.cloud import secretmanager
+
 logging.basicConfig(
-    handlers=[RotatingFileHandler("prism-eval.log", maxBytes= 1024 ** 1, backupCount=2, mode='a')],
+    handlers=[
+        RotatingFileHandler("/home/langston/pave-prism/prism-eval.log", maxBytes=1024**3, backupCount=2, mode="a")
+    ],
     format="%(name)s @ %(asctime)s: %(message)s",
     datefmt="%I:%M:%S",
     level=logging.DEBUG,
@@ -35,11 +34,9 @@ prism_token = prism_data["PRISM_ACCESS_TOKEN"]
 
 cm = Connection_Manager()
 
-# print("Connecting mongodb...")
 mongo_db = cm.get_pymongo_table("prism")
-# print(f"Connected mongo client at db {mongo_db.name}")
 
-
+# Pull transactions for 6 months from backend db
 def aggregate2(
     user_id: str,
     conn: sqlalchemy.engine.Connection,
@@ -48,10 +45,6 @@ def aggregate2(
     ).strftime("%Y-%m-%d"),
     end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d"),
 ):
-
-    # account_data = {"run_timestamp": datetime.datetime.now().isoformat(), "accounts": []}
-    # transaction_data = {"transactions": [], "start_date": start_date_str, "end_date": end_date_str}
-
     cashflow_data = {"accounts": [], "transactions": []}
 
     link_select_string = (
@@ -71,20 +64,18 @@ def aggregate2(
 
     raw_transactions = conn.execute(sql_account_string).fetchall()
 
-
+    # TODO: This is the main slowdown for the prism eval. Having to deduplicate transactions and accounts
+    # from the backend raw transaction sets sucks massively.
     newest_account_dict = {}
     trans_ids = []
     for row in raw_transactions:
-        # print(row)
         for item in row[1]:
-            # print(f"{len(item['transactions'])=}, {row[0]}")
             for account in item["accounts"]:
                 if (
                     account["account_id"] not in newest_account_dict.keys()
                     or account["account_id"] in newest_account_dict.keys()
                     and newest_account_dict[account["account_id"]]["date"] < row[0]
                 ):
-
                     newest_account_dict[account["account_id"]] = {"date": row[0]}
 
                     a = {
@@ -101,12 +92,10 @@ def aggregate2(
                     pass
 
             for transaction in item["transactions"]:
-
                 if transaction["transaction_id"] not in trans_ids:
                     trans_ids.append(transaction["transaction_id"])
 
                     # print(transaction, "\n")
-
                     cashflow_data["transactions"].append(
                         {
                             "transaction_id": transaction["transaction_id"],
@@ -139,6 +128,8 @@ def aggregate2(
 
 
 def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
+    
+    # This ensures that the eval is only done for the user once a month
     responses = mongo_db["responses"]
     cashscore_data = responses.find_one(
         {"user_id": str(user_id), "status_code": 200}, sort=[("created_at", -1)]
@@ -152,13 +143,14 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
     else:
         logging.warning(
             "\tCashscore calcaluted recently for user {} -> Score:{} @ {}\n".format(
-                user_id, 
-                cashscore_data['response']['products']['cashscore'], 
-                cashscore_data['created_at'].strftime('%Y-%m-%d')
+                user_id,
+                cashscore_data["response"]["products"]["cashscore"],
+                cashscore_data["created_at"].strftime("%Y-%m-%d"),
             )
         )
         return
 
+    # If we're calculating a new cashscore aggregate transaction and account data
     cashflow_data = aggregate2(user_id, conn)
     # print(f"\t{len(cashflow_data['transactions'])=}")
 
@@ -172,6 +164,9 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         logging.warning("\tNot enough transactions, skipping eval...")
         return
 
+    # This is done just to see what prism transaction-per-date-range threshold is
+    # if the amount of transactions is too low or too infrequent for a given range of time
+    # prism does not complete the eval
     date_min, date_max = min(
         cashflow_data["transactions"],
         key=lambda t: datetime.datetime.strptime(t["posted_date"], "%Y-%m-%d"),
@@ -186,10 +181,8 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
 
     logging.info(f"\t{len(cashflow_data['transactions'])=}\n{delta_time=}")
 
-#    if delta_time < datetime.timedelta(days=90):
-#        logging.warning("\tLess than 90 days of transaction history")
-#        return
 
+    # Finally, call the prism endpoint.
     payload = {
         "customer_id": user_id,
         "cashflow_data": cashflow_data,
@@ -202,36 +195,32 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
     }
 
     endpoint = (
-        prism_host
-        + "/v2/evaluation?cashscore=1&insights=1&categories=1&income=1"
+        prism_host + "/v2/evaluation?cashscore=1&insights=1&categories=1&income=1"
     )
     res = requests.post(endpoint, data=json.dumps(payload), headers=headers)
     response = convert_nans(res.json())
     logging.debug(f"\t{response=}")
 
     mongo_db.responses.insert_one(
-        {
-                "user_id": user_id
-        },
+        {"user_id": user_id},
         {
             "created_at": datetime.datetime.now(),
             "status_code": res.status_code,
             "response": response,
             "user_id": user_id,
-        }
+        },
     )
 
-
     try:
+        # Store the responses into MongoDB if there wasn't an error
+        
         cashscore = response["products"]["cashscore"]["result"]
         insights = response["products"]["insights"]["result"]
         categories = response["products"]["categories"]["result"]
         income = response["products"]["income"]["result"]
 
         mongo_db.cashscores.insert_one(
-            {
-                "user_id": user_id
-            },
+            {"user_id": user_id},
             {
                 "created_at": datetime.datetime.now(),
                 "cashscore": cashscore,
@@ -240,9 +229,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         )
 
         mongo_db.insights.insert_one(
-            {
-                "user_id": user_id
-            },
+            {"user_id": user_id},
             {
                 "created_at": datetime.datetime.now(),
                 "insights": insights,
@@ -251,9 +238,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         )
 
         mongo_db.categories.insert_one(
-            {
-                "user_id": user_id
-            },
+            {"user_id": user_id},
             {
                 "created_at": datetime.datetime.now(),
                 "categories": categories,
@@ -262,9 +247,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         )
 
         mongo_db.incomes.insert_one(
-            {
-                "user_id": user_id
-            },
+            {"user_id": user_id},
             {
                 "created_at": datetime.datetime.now(),
                 "income": income,
@@ -276,7 +259,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
     except:
         logging.debug(f"No products recieved for user: {user_id}")
 
-
+# Prism returns Nans (bruh)
 def convert_nans(obj: Dict):
     for key, value in obj.items():
         if type(value) == dict:
@@ -294,15 +277,18 @@ if __name__ == "__main__":
     start = datetime.datetime.now()
     if param_user_ids != "":
         user_ids = param_user_ids.split(",")
-        logging.debug(f"Running eval for {len(user_ids)} user(s)\n")
     else:
         # Calculate for all users
         rows = conn.execute("SELECT id FROM public.users").fetchall()
         user_ids = [str(u[0]) for u in rows]
-        logging.debug("Running evals for all users...\n")
 
+    logging.debug(f"Running eval for {len(user_ids)} user(s)\n")
     for user_id in tqdm(user_ids):
-        calculate_new_cashscore(user_id, conn)
+        # Add rudimentary error handling so we don't leave the connection open
+        try:
+            calculate_new_cashscore(user_id, conn)
+        except Exception as e:
+            logging.exception(e)
 
     end = datetime.datetime.now()
     logging.info(f"\nTotal runtime: {end-start}")
