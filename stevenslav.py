@@ -17,17 +17,11 @@ import construct_env
 
 from google.cloud import secretmanager
 
-is_stage = False
-if len(sys.argv) > 0 and sys.argv[0] == "stage":
-    is_stage = True
-    sys.argv.pop(0)  
-    
-    print(list(sys.argv))
 
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
 keys = secret_manager_client.access_secret_version(
-    name=f"projects/eql-data-processing{'-stage' if is_stage else ''}/secrets/pave-agent-decryption-keys/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/pave-agent-decryption-keys/versions/latest"
 ).payload.data.decode("UTF-8")
 keys = json.loads(keys)["KEYS"]
 
@@ -135,6 +129,7 @@ def main():
                 "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '2 hours')"
             ).fetchall()
         user_ids = [str(row[0]) for row in rows]
+        print(user_ids)
 
         if len(user_ids) < 1:
             # Close db connection
@@ -155,7 +150,7 @@ def main():
 
         # Get pave secret values
         pave_str = secret_manager_client.access_secret_version(
-            name=f"projects/eql-data-processing{'-stage' if is_stage else ''}/secrets/pave-prism-info/versions/latest"
+            name=f"projects/eql-data-processing-stage/secrets/pave-prism-info/versions/latest"
         ).payload.data.decode("UTF-8")
 
         pave_data = json.loads(pave_str)
@@ -167,7 +162,7 @@ def main():
         }
 
         # Establish connection to mongo db
-        mongo_db = cm.get_pymongo_table("pave")
+        mongo_db = cm.get_pymongo_table(f"pave-stage")
 
         logging.debug(f"Running evals for {len(user_ids)} users...\n")
         for user_id in tqdm(user_ids):
