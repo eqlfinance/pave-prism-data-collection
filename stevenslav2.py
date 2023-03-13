@@ -8,6 +8,7 @@ import requests
 import sys
 import base64
 import sys
+from uuid import UUID
 
 from tqdm import tqdm
 from cryptography.fernet import Fernet, MultiFernet
@@ -88,7 +89,7 @@ def handle_pave_request(
     res_code = res.status_code
     res_json = json.dumps(res.json())
     logging.info(
-        f"\tResponse: {res_code} \n{res_json[:100]}...{res_json[-100:]}"
+        f"\tResponse: {res_code} \n{res_json[:100]} ... {res_json[-100:]}"
     )
 
     if res_code == 429:
@@ -141,7 +142,8 @@ def new_user_sync():
     conn = cm.get_postgres_connection()
     
     rows = conn.execute(
-        "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '30 minute')"
+        #"SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '30 minutes') LIMIT 1"
+        "SELECT DISTINCT id FROM public.users LIMIT 1"
     ).fetchall()
     
     user_ids = [str(row[0]) for row in rows]
@@ -272,7 +274,28 @@ def hourly_sync():
     ).fetchall()
 
     for row in rows:
-        row = row._asdict()
+        row:dict = row._asdict()
+        transaction = {
+            "transaction_id": str(row["plaid_transaction_id"]),
+            "account_id": str(row["plaid_account_id"]),
+            "amount": float(row["amount"]),
+            "date": row["authorized_date"],
+            "memo": " ".join(
+                row["personal_finance_category"].values()
+            )
+            if row["personal_finance_category"]
+            else "",
+            "name": row["name"] if row["name"] else " ",
+            "pending": row["pending"],
+            "category": row["category"],
+            "category_id": row["category_id"],
+            "iso_currency_code": row["iso_currency_code"],
+            "merchant_name": row["merchant_name"],
+            "payment_channel": row["payment_channel"],
+            "transaction_type": row["transaction_type"],
+            "payment_meta": row["payment_meta"],
+            "location": row["location"]
+        }
         
         user_id = conn.execute(f"SELECT user_id FROM public.plaid_links WHERE id = \'{str(row['link_id'])}\'").fetchone()[0]
         
@@ -287,10 +310,12 @@ def hourly_sync():
             user_id=user_id,
             method="post",
             endpoint=f"{pave_base_url}/{user_id}/transactions",
-            payload={"transactions": [row]},
+            payload={"transactions": [transaction]},
             headers=pave_headers,
             params=params,
         )
+        print(response.json())
+        return
         #####################################################################
 
         if response.status_code == 200:
