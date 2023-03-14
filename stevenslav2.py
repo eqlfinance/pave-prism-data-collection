@@ -181,22 +181,6 @@ def new_user_sync():
         # Get all transactions and upload them to mongodb
         mongo_db = cm.get_pymongo_table(pave_table)
 
-        response = handle_pave_request(
-            user_id=user_id,
-            method="get",
-            endpoint=f"{pave_base_url}/{user_id}/balances",
-            payload=None,
-            headers=pave_headers,
-            params=params,
-        )
-        insert_response_into_db(
-            user_id=user_id,
-            res=response,
-            mongo_db=mongo_db,
-            collection_name="balances",
-            response_column_name="balances",
-        )   
-        #####################################################################
 
         # Store the transaction data from pave
         response = handle_pave_request(
@@ -214,6 +198,27 @@ def new_user_sync():
             collection_name="transactions",
             response_column_name="transactions",
         )
+        transaction_date_str=None
+        if response.status_code == 200:
+            transaction_date_str = sorted(response.json()["transactions"]["transactions"], key=lambda x: datetime.datetime.fromisoformat(x["date"]))[0]
+            params["start_date"] = transaction_date_str
+        #####################################################################
+        
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/balances",
+            payload=None,
+            headers=pave_headers,
+            params=params,
+        )
+        insert_response_into_db(
+            user_id=user_id,
+            res=response,
+            mongo_db=mongo_db,
+            collection_name="balances",
+            response_column_name="balances",
+        )   
         #####################################################################
 
         # Store the unified insights data from pave
@@ -276,7 +281,7 @@ def hourly_sync():
         "SELECT * FROM public.plaid_transactions WHERE plaid_transactions.date >= (NOW() - INTERVAL '25 days')"
     ).fetchall()
 
-    for row in rows:
+    for row in tqdm(rows):
         row:dict = row._asdict()
         transaction = {
             "transaction_id": str(row["plaid_transaction_id"]),
