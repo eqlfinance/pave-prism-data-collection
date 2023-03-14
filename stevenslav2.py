@@ -200,8 +200,10 @@ def new_user_sync():
         )
         transaction_date_str=None
         if response.status_code == 200:
-            transaction_date_str = sorted(response.json()["transactions"], key=lambda x: datetime.datetime.fromisoformat(x["date"]))[0]
-            params["start_date"] = transaction_date_str
+            transactions = response.json()["transactions"]
+            transaction_date_str = transactions[len(transactions)-1]["date"]
+            logging.info(f" > Earliest transaction: {transaction_date_str}")
+        params["start_date"] = transaction_date_str
         #####################################################################
         
         response = handle_pave_request(
