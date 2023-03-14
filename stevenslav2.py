@@ -32,6 +32,7 @@ logging.basicConfig(
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
+# TODO: switch to pave-stage
 pave_table = "pave-stage-test"
 
 # Decrpytion keys
@@ -73,10 +74,7 @@ def handle_pave_request(
     params: dict,
     last_wait: float = 0,
 ) -> requests.Response:
-    logging.info(
-        "user_id:{}\n\tRequest: {} /{}".format(user_id, method.upper(), endpoint)
-    )
-
+    
     request_timer = datetime.datetime.now()
      
     if method == "get":
@@ -101,7 +99,7 @@ def handle_pave_request(
         )
     else:
         request_timer_end = datetime.datetime.now()
-        logging.info(f"  DB insertion took: {request_timer_end-request_timer}")
+        logging.info(f"  Pave request to {endpoint} took: {request_timer_end-request_timer}")
         
         return res
     
@@ -116,19 +114,21 @@ def insert_response_into_db(
     res_code = res.status_code
     
     if res_code == 200:
-        mongo_collection.insert_one(
+        mongo_collection.replace_one(
+            {"user_id": user_id},
             {
                 response_column_name: res.json(),
                 "user_id": user_id,
                 "response_code": res.status_code,
                 "date": datetime.datetime.now(),
             },
+            upsert=True
         )
     else:
-        logging.warning("\tCan't insert: {} {}\n".format(res_code, res.json()))
+        logging.warning("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()))
     
     mongo_timer_end = datetime.datetime.now()
-    logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+    logging.info(f"  DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}")
     
 
 '''
@@ -142,8 +142,7 @@ def new_user_sync():
     conn = cm.get_postgres_connection()
     
     rows = conn.execute(
-        #"SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '30 minutes') LIMIT 1"
-        "SELECT DISTINCT id FROM public.users LIMIT 1"
+        "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
     ).fetchall()
     
     user_ids = [str(row[0]) for row in rows]
@@ -155,10 +154,11 @@ def new_user_sync():
         ).fetchall()
         
         access_tokens = [decrypt(str(row[0])) for row in rows]
+        five_years_in_days = 365 * 5
 
         for access_token in access_tokens:
             res = requests.post(
-                f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days=3650",
+                f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={five_years_in_days}",
                 json={"access_token": f"{access_token}"},
             )
             res = res.json()
@@ -169,13 +169,12 @@ def new_user_sync():
 
         # Date ranges for pave
         start_date_str = (
-            datetime.datetime.now() - datetime.timedelta(days=365 * 5)
+            datetime.datetime.now() - datetime.timedelta(days=five_years_in_days)
         ).strftime("%Y-%m-%d")
         end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
         params = {"start_date": start_date_str, "end_date": end_date_str}
     
         # Get all transactions and upload them to mongodb
-        # TODO: switch to pave-stage
         mongo_db = cm.get_pymongo_table(pave_table)
 
         response = handle_pave_request(
@@ -270,7 +269,7 @@ def hourly_sync():
     logging.info("\nRuninng Hourly Sync:\n")
     
     rows = conn.execute(
-        "SELECT * FROM public.plaid_transactions WHERE plaid_transactions.date >= (NOW() - INTERVAL '25 days') LIMIT 1"
+        "SELECT * FROM public.plaid_transactions WHERE plaid_transactions.date >= (NOW() - INTERVAL '25 days')"
     ).fetchall()
 
     for row in rows:
@@ -279,7 +278,7 @@ def hourly_sync():
             "transaction_id": str(row["plaid_transaction_id"]),
             "account_id": str(row["plaid_account_id"]),
             "amount": float(row["amount"]),
-            "date": row["authorized_date"],
+            "date": str(row["authorized_date"]),
             "memo": " ".join(
                 row["personal_finance_category"].values()
             )
@@ -301,7 +300,7 @@ def hourly_sync():
         
          # Date ranges for pave
         start_date_str = (
-            datetime.datetime.now() - datetime.timedelta(days=1)
+            datetime.datetime.now() - datetime.timedelta(days=25)
         ).strftime("%Y-%m-%d")
         end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
         params = {"start_date": start_date_str, "end_date": end_date_str, "resolve_duplicates": True}
@@ -314,8 +313,7 @@ def hourly_sync():
             headers=pave_headers,
             params=params,
         )
-        print(response.json())
-        return
+        
         #####################################################################
 
         if response.status_code == 200:
@@ -335,17 +333,23 @@ def hourly_sync():
             logging.info("Inserting response into transactions")
             mongo_timer = datetime.datetime.now()
             mongo_collection = mongo_db["transactions"]
-            
-            mongo_collection.update_one(
-                {"user_id": user_id},
-                {
-                    "$push": {"$push": {"transactions.transactions": response.json()["transaction"]}},
-                    "$currentDate": {"transactions.to": True, "date": False}
-                }
-            )
-            
-            mongo_timer_end = datetime.datetime.now()
-            logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+            transactions = response.json()["transactions"]
+
+            if len(transactions) > 0:
+                logging.info(f"Inserting {transactions} into transactions")
+               
+                mongo_collection.update_one(
+                    {"user_id": str(user_id)},
+                    {
+                        "$push": {"transactions.transactions": {"$each": transactions}},
+                        "$currentDate": {"transactions.to": {"$type":"date"}, "date": {"$type": "timestamp"}}
+                    }
+                )
+                
+                mongo_timer_end = datetime.datetime.now()
+                logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+            else:
+                logging.warning("Got to hourly db insertion but no transactions were found for the date range")
         else:
             logging.error("Could not upload transaction to mongodb") 
         #####################################################################
