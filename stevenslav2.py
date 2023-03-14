@@ -32,8 +32,7 @@ logging.basicConfig(
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-# TODO: switch to pave-stage
-pave_table = "pave-stage-test"
+pave_table = "pave-stage"
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
@@ -449,7 +448,6 @@ def hourly_sync():
         #####################################################################
 
         if response.status_code == 200:
-            # TODO: switch to pave-stage
             mongo_db = cm.get_pymongo_table(pave_table)
             
             # Store the transaction data from pave
