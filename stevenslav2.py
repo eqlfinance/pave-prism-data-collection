@@ -60,6 +60,9 @@ def base64_decode(val: str) -> bytes:
 
 
 def decrypt(val: str) -> str:
+    if not val:
+        return None
+    
     fernet = MultiFernet(Fernet(k) for k in keys)
     actual = fernet.decrypt(base64_decode(val))
     return actual.decode()
@@ -142,7 +145,8 @@ def new_user_sync():
     conn = cm.get_postgres_connection()
     
     rows = conn.execute(
-        "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
+        #"SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
+        "SELECT DISTINCT id FROM public.users" 
     ).fetchall()
     
     user_ids = [str(row[0]) for row in rows]
@@ -298,7 +302,7 @@ def hourly_sync():
         
         user_id = conn.execute(f"SELECT user_id FROM public.plaid_links WHERE id = \'{str(row['link_id'])}\'").fetchone()[0]
         
-         # Date ranges for pave
+        # Date ranges for pave
         start_date_str = (
             datetime.datetime.now() - datetime.timedelta(days=25)
         ).strftime("%Y-%m-%d")
@@ -342,7 +346,7 @@ def hourly_sync():
                     {"user_id": str(user_id)},
                     {
                         "$push": {"transactions.transactions": {"$each": transactions}},
-                        "$currentDate": {"transactions.to": {"$type":"date"}, "date": {"$type": "timestamp"}}
+                        "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
                     }
                 )
                 
@@ -353,7 +357,109 @@ def hourly_sync():
         else:
             logging.error("Could not upload transaction to mongodb") 
         #####################################################################
- 
+
+'''
+    Daily sync to update user balances for all users in the db for yesterday
+'''
+def daily_sync():
+    logging.info("\nRuninng Daily Balance Sync:\n")
+    
+    rows = conn.execute(
+        "SELECT DISTINCT id FROM public.users"
+    ).fetchall()
+    
+    user_ids = [str(row[0]) for row in rows]
+
+    # Get all user access tokens and upload transaction/balance them using the pave agent
+    for user_id in tqdm(user_ids):
+        rows = conn.execute(
+            f"SELECT DISTINCT id FROM public.plaid_links WHERE user_id = '{user_id}'"
+        ).fetchall()
+        plaid_link_ids = [str(row[0]) for row in rows] 
+    
+        if len(plaid_link_ids) == 0:
+            logging.warning(f"No plaid links for user {user_id}")
+            continue
+    
+        rows = conn.execute(
+            f"SELECT * FROM public.plaid_accounts WHERE plaid_accounts.link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')}"
+        ).fetchall()
+        
+        accounts = [{
+            "account_id": str(row["plaid_id"]),
+            "balances": {
+                "available": decrypt(row["balances_available"]),
+                "current": decrypt(row["balances_current"]), 
+                "iso_currency": decrypt(row["balances_iso_currency_code"]),
+                "limit": decrypt(row["balances_limit"]),
+                "unofficial_currency_code": decrypt(row["balances_unofficial_currency_code"]) 
+            },
+            "mask": decrypt(row["mask"]),
+            "name": decrypt(row["name"]),
+            "official_name": decrypt(row["official_name"]),
+            "type": row["type"],
+            "subtype": row["subtype"]
+        }
+        for row in rows
+        ]
+        
+        response = handle_pave_request(
+            user_id=user_id,
+            method="post",
+            endpoint=f"{pave_base_url}/{user_id}/balances",
+            payload={"run_timestamp": str(datetime.datetime.now()), "accounts": accounts},
+            headers=pave_headers,
+            params=None,
+        ) 
+        #####################################################################
+
+        if response.status_code == 200:
+            mongo_db = cm.get_pymongo_table(pave_table)
+            
+            # Date ranges for pave
+            start_date_str = (
+                datetime.datetime.now() - datetime.timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+            end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
+            params = {"start_date": start_date_str, "end_date": end_date_str}
+            
+            # Store the transaction data from pave
+            response = handle_pave_request(
+                user_id=user_id,
+                method="get",
+                endpoint=f"{pave_base_url}/{user_id}/balances",
+                payload=None,
+                headers=pave_headers,
+                params=params,
+            )
+            
+            mongo_timer = datetime.datetime.now()
+            mongo_collection = mongo_db["balances"]
+            balances = response.json()["accounts_balances"]
+
+
+            if len(balances) > 0:
+                logging.info(f"Inserting {balances} into balances")
+
+                mongo_collection.update_one(
+                    {"user_id": str(user_id)},
+                    {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
+                )
+                for balance in balances:
+                    mongo_collection.update_one(
+                        {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
+                        {"$push": {"balances.accounts_balances.$.balances": balance}}
+                    )
+
+                
+                mongo_timer_end = datetime.datetime.now()
+                logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+            else:
+                logging.warning("Got to daily db insertion but no transactions were found for the date range")
+        else:
+            logging.error("Could not upload balances to mongodb") 
+        ##################################################################### 
+
 # Open connection to postgres db
 cm = Connection_Manager()
 conn = cm.get_postgres_connection() 
@@ -367,6 +473,8 @@ if __name__ == "__main__":
             new_user_sync()
         elif which == "hourly":
             hourly_sync()
+        elif which == "daily":
+            daily_sync() 
         else:
             raise Exception("You must provide either new_users, hourly, or daily")
     except Exception as e:
