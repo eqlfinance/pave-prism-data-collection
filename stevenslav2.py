@@ -275,12 +275,14 @@ def new_user_sync():
         )
         #####################################################################
             
-
+'''
+    Hourly sync to update transactions created in the last hour
+'''
 def hourly_sync():
     logging.info("\nRuninng Hourly Sync:\n")
     
     rows = conn.execute(
-        "SELECT * FROM public.plaid_transactions WHERE plaid_transactions.date >= (NOW() - INTERVAL '25 days')"
+        "SELECT * FROM public.plaid_transactions WHERE plaid_transactions.date >= (NOW() - INTERVAL '70 minutes')"
     ).fetchall()
 
     for row in tqdm(rows):
@@ -311,7 +313,7 @@ def hourly_sync():
         
         # Date ranges for pave
         start_date_str = (
-            datetime.datetime.now() - datetime.timedelta(days=25)
+            datetime.datetime.now() - datetime.timedelta(days=1)
         ).strftime("%Y-%m-%d")
         end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
         params = {"start_date": start_date_str, "end_date": end_date_str, "resolve_duplicates": True}
@@ -467,6 +469,88 @@ def daily_sync():
             logging.error("Could not upload balances to mongodb") 
         ##################################################################### 
 
+'''
+    Weekly/Daily 2 sync to update unified insight data
+'''
+def weekly_sync():
+    logging.info("\nRuninng weekly sync:\n")
+    cm = Connection_Manager()
+    
+    # Open connection to postgres db
+    conn = cm.get_postgres_connection()
+    
+    rows = conn.execute(
+        "SELECT DISTINCT id FROM public.users" 
+    ).fetchall()
+    
+    user_ids = [str(row[0]) for row in rows]
+    
+    # Date ranges for pave, set for 2 years subject to change
+    start_date_str = (
+        datetime.datetime.now() - datetime.timedelta(days=365*2)
+    ).strftime("%Y-%m-%d")
+    end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
+    params = {"start_date": start_date_str, "end_date": end_date_str}
+
+    # Get all users unified insight data 
+    for user_id in tqdm(user_ids):
+        # Get all transactions and upload them to mongodb
+        mongo_db = cm.get_pymongo_table(pave_table)
+
+        # Store the unified insights data from pave
+        params = {
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "with_transactions": True,
+        }
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/unified_insights",
+            payload=None,
+            headers=pave_headers,
+            params=params,
+        )
+
+        if response.status_code == 200:
+            for title, object in response.json().items():
+                logging.info("Inserting response into: {}".format(title))
+                mongo_collection = mongo_db[title]
+                mongo_collection.replace_one(
+                    {"user_id": user_id},
+                    {
+                        title: object,
+                        "user_id": user_id,
+                        "response_code": response.status_code,
+                        "date": datetime.datetime.now(),
+                    },
+                    upsert=True,
+                )
+        else:
+            logging.warning("\tCan't insert: {} {}\n".format(response.status_code, response.json()))
+        #####################################################################
+
+        # This creates a pretty big slowdown and we're not using it so I'll keep it
+        # commented for now
+        # # Store the attribute data from pave
+        # params = {"date": end_date_str}
+        # response = handle_pave_request(
+        #     user_id=user_id,
+        #     method="get",
+        #     endpoint=f"{pave_base_url}/{user_id}/attributes",
+        #     payload=None,
+        #     headers=pave_headers,
+        #     params=params,
+        # )
+        # insert_response_into_db(
+        #     user_id=user_id,
+        #     res=response,
+        #     mongo_db=mongo_db,
+        #     collection_name="attributes",
+        #     response_column_name="attributes",
+        # )
+        # #####################################################################
+
 # Open connection to postgres db
 cm = Connection_Manager()
 conn = cm.get_postgres_connection() 
@@ -482,6 +566,8 @@ if __name__ == "__main__":
             hourly_sync()
         elif which == "daily":
             daily_sync() 
+        elif which == "weekly":
+            weekly_sync()
         else:
             raise Exception("You must provide either new_users, hourly, or daily")
     except Exception as e:
