@@ -137,6 +137,121 @@ def insert_response_into_db(
 '''
     Ran every 30 minutes
 '''
+def new_link_sync():
+    logging.info("\nRuninng new link sync:\n")
+    cm = Connection_Manager()
+    
+    # Open connection to postgres db
+    conn = cm.get_postgres_connection()
+    
+    rows = conn.execute(
+        #"SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
+        "SELECT DISTINCT access_token, user_id FROM public.plaid_links" 
+    ).fetchall()
+    
+    for row in rows:
+        row = row._asdict()
+        access_token, user_id = decrypt(str(row[0])), str(row[1])
+        five_years_in_days = 365 * 5
+        
+        res = requests.post(
+            f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={five_years_in_days}",
+            json={"access_token": f"{access_token}"},
+        )
+        res = res.json()
+        logging.debug(f"Got response from pave-agent: {res}")
+        
+        # Give pave agent some time to process transactions
+        time.sleep(2)
+
+        # Date ranges for pave
+        start_date_str = (
+            datetime.datetime.now() - datetime.timedelta(days=five_years_in_days)
+        ).strftime("%Y-%m-%d")
+        end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
+        params = {"start_date": start_date_str, "end_date": end_date_str}
+    
+        mongo_db = cm.get_pymongo_table(pave_table)
+            
+        # Store the transaction data from pave
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/transactions",
+            payload=None,
+            headers=pave_headers,
+            params=params,
+        )
+        
+        logging.info("Inserting response into transactions")
+        mongo_timer = datetime.datetime.now()
+        mongo_collection = mongo_db["transactions"]
+        transactions = response.json()["transactions"]
+
+        if len(transactions) > 0:
+            logging.info(f"Inserting {transactions} into transactions")
+            
+            mongo_collection.update_one(
+                {"user_id": str(user_id)},
+                {
+                    "$addToSet": {"transactions.transactions": {"$each": transactions}},
+                    "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
+                }
+            )
+            
+            mongo_timer_end = datetime.datetime.now()
+            logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+        else:
+            logging.warning("Got to new link transaction db insertion but no transactions were found for the date range")
+        
+        if response.status_code == 200:
+            transactions = response.json()["transactions"]
+            transaction_date_str = transactions[len(transactions)-1]["date"]
+            logging.info(f" > Earliest transaction: {transaction_date_str}")
+            params["start_date"] = transaction_date_str
+        #####################################################################
+        
+        # Store the transaction data from pave
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/balances",
+            payload=None,
+            headers=pave_headers,
+            params=params,
+        )
+        
+        mongo_timer = datetime.datetime.now()
+        mongo_collection = mongo_db["balances"]
+        balances = response.json()["accounts_balances"]
+
+
+        if len(balances) > 0:
+            logging.info(f"Inserting {balances} into balances")
+
+            mongo_collection.update_one(
+                {"user_id": str(user_id)},
+                {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
+            )
+            for balance in balances:
+                mongo_collection.update_one(
+                    {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
+                    {"$push": {"balances.accounts_balances.$.balances": balance}},
+                    upsert=True
+                )
+
+            
+            mongo_timer_end = datetime.datetime.now()
+            logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+        else:
+            logging.warning("Got to new link balance db insertion but no transactions were found for the date range")  
+        #####################################################################
+
+##################################################################################################################################################################################################
+
+'''
+    Ran every 30 minutes
+'''
 def new_user_sync():
     logging.info("\nRuninng new user sync:\n")
     cm = Connection_Manager()
@@ -203,7 +318,7 @@ def new_user_sync():
             transactions = response.json()["transactions"]
             transaction_date_str = transactions[len(transactions)-1]["date"]
             logging.info(f" > Earliest transaction: {transaction_date_str}")
-        params["start_date"] = transaction_date_str
+            params["start_date"] = transaction_date_str
         #####################################################################
         
         response = handle_pave_request(
@@ -274,7 +389,10 @@ def new_user_sync():
             response_column_name="attributes",
         )
         #####################################################################
-            
+        
+        
+##################################################################################################################################################################################################
+       
 '''
     Hourly sync to update transactions created in the last hour
 '''
@@ -354,7 +472,7 @@ def hourly_sync():
                 mongo_collection.update_one(
                     {"user_id": str(user_id)},
                     {
-                        "$push": {"transactions.transactions": {"$each": transactions}},
+                        "$addToSet": {"transactions.transactions": {"$each": transactions}},
                         "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
                     }
                 )
@@ -366,6 +484,8 @@ def hourly_sync():
         else:
             logging.error("Could not upload transaction to mongodb") 
         #####################################################################
+
+##################################################################################################################################################################################################
 
 '''
     Daily sync to update user balances for all users in the db for yesterday
@@ -457,7 +577,7 @@ def daily_sync():
                 for balance in balances:
                     mongo_collection.update_one(
                         {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
-                        {"$push": {"balances.accounts_balances.$.balances": balance}}
+                        {"$addToSet": {"balances.accounts_balances.$.balances": balance}}
                     )
 
                 
@@ -468,6 +588,8 @@ def daily_sync():
         else:
             logging.error("Could not upload balances to mongodb") 
         ##################################################################### 
+
+##################################################################################################################################################################################################
 
 '''
     Weekly/Daily 2 sync to update unified insight data
@@ -550,6 +672,8 @@ def weekly_sync():
         #     response_column_name="attributes",
         # )
         # #####################################################################
+
+##################################################################################################################################################################################################
 
 # Open connection to postgres db
 cm = Connection_Manager()
