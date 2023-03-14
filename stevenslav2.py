@@ -149,13 +149,13 @@ def new_link_sync():
         "SELECT DISTINCT access_token, user_id FROM public.plaid_links" 
     ).fetchall()
     
-    for row in rows:
+    for row in tqdm(rows):
         row = row._asdict()
-        access_token, user_id = decrypt(str(row[0])), str(row[1])
-        five_years_in_days = 365 * 5
+        access_token, user_id = decrypt(row["access_token"]), str(row["user_id"])
+        time_in_days = 365 * 2
         
         res = requests.post(
-            f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={five_years_in_days}",
+            f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={time_in_days}",
             json={"access_token": f"{access_token}"},
         )
         res = res.json()
@@ -166,7 +166,7 @@ def new_link_sync():
 
         # Date ranges for pave
         start_date_str = (
-            datetime.datetime.now() - datetime.timedelta(days=five_years_in_days)
+            datetime.datetime.now() - datetime.timedelta(days=time_in_days)
         ).strftime("%Y-%m-%d")
         end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
         params = {"start_date": start_date_str, "end_date": end_date_str}
@@ -183,20 +183,22 @@ def new_link_sync():
             params=params,
         )
         
-        logging.info("Inserting response into transactions")
         mongo_timer = datetime.datetime.now()
         mongo_collection = mongo_db["transactions"]
         transactions = response.json()["transactions"]
 
         if len(transactions) > 0:
-            logging.info(f"Inserting {transactions} into transactions")
-            
+            logging.info(f"Inserting {json.dumps(transactions)[:200]}... into transactions")
+           
+            # Commenting out upsertion code because this user will be picked up by new_user_sync
             mongo_collection.update_one(
                 {"user_id": str(user_id)},
                 {
                     "$addToSet": {"transactions.transactions": {"$each": transactions}},
+                    #"$setOnInsert": {"transactions": transactions, "user_id": user_id, "date"}
                     "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
-                }
+                },
+                #upsert=True
             )
             
             mongo_timer_end = datetime.datetime.now()
@@ -227,7 +229,7 @@ def new_link_sync():
 
 
         if len(balances) > 0:
-            logging.info(f"Inserting {balances} into balances")
+            logging.info(f"Inserting {json.dumps(balances)[:200]} into balances")
 
             mongo_collection.update_one(
                 {"user_id": str(user_id)},
@@ -236,8 +238,7 @@ def new_link_sync():
             for balance in balances:
                 mongo_collection.update_one(
                     {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
-                    {"$push": {"balances.accounts_balances.$.balances": balance}},
-                    upsert=True
+                    {"$addToSet": {"balances.accounts_balances.$.balances": balance}},
                 )
 
             
@@ -273,11 +274,11 @@ def new_user_sync():
         ).fetchall()
         
         access_tokens = [decrypt(str(row[0])) for row in rows]
-        five_years_in_days = 365 * 5
+        time_in_days = 365 * 2
 
         for access_token in access_tokens:
             res = requests.post(
-                f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={five_years_in_days}",
+                f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={time_in_days}",
                 json={"access_token": f"{access_token}"},
             )
             res = res.json()
@@ -288,7 +289,7 @@ def new_user_sync():
 
         # Date ranges for pave
         start_date_str = (
-            datetime.datetime.now() - datetime.timedelta(days=five_years_in_days)
+            datetime.datetime.now() - datetime.timedelta(days=time_in_days)
         ).strftime("%Y-%m-%d")
         end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
         params = {"start_date": start_date_str, "end_date": end_date_str}
@@ -461,7 +462,6 @@ def hourly_sync():
                 params=params,
             )
             
-            logging.info("Inserting response into transactions")
             mongo_timer = datetime.datetime.now()
             mongo_collection = mongo_db["transactions"]
             transactions = response.json()["transactions"]
@@ -686,6 +686,8 @@ if __name__ == "__main__":
         
         if which == "new":
             new_user_sync()
+        elif which == "new2":
+            new_link_sync()
         elif which == "hourly":
             hourly_sync()
         elif which == "daily":
