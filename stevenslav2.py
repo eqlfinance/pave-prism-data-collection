@@ -200,7 +200,7 @@ def new_user_sync():
         )
         transaction_date_str=None
         if response.status_code == 200:
-            transaction_date_str = sorted(response.json()["transactions"]["transactions"], key=lambda x: datetime.datetime.fromisoformat(x["date"]))[0]
+            transaction_date_str = sorted(response.json()["transactions"], key=lambda x: datetime.datetime.fromisoformat(x["date"]))[0]
             params["start_date"] = transaction_date_str
         #####################################################################
         
