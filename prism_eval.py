@@ -128,7 +128,6 @@ def aggregate2(
 
 
 def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
-    
     # This ensures that the eval is only done for the user once a month
     responses = mongo_db["responses"]
     cashscore_data = responses.find_one(

@@ -15,7 +15,7 @@ from google.cloud import secretmanager
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
 keys = secret_manager_client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/pave-agent-decryption-keys/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/pave-agent-decryption-keys/versions/latest"
 ).payload.data.decode("UTF-8")
 keys = json.loads(keys)["KEYS"]
 
@@ -56,7 +56,7 @@ def run(user_ids: List[str] = []) -> bool:
 
             # Get pave secret values
             env_file_start = secret_manager_client.access_secret_version(
-                name=f"projects/eql-data-processing/secrets/pave-agent-env-file/versions/latest"
+                name=f"projects/eql-data-processing-stage/secrets/pave-agent-env-file/versions/latest"
             ).payload.data.decode("UTF-8")
 
             env_file.write(env_file_start)
