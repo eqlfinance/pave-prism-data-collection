@@ -22,10 +22,10 @@ from google.cloud import secretmanager
 # Set up the logging instance
 logging.basicConfig(
     handlers=[
-        RotatingFileHandler("stevenslav2.log", maxBytes=1024**3, backupCount=2, mode="a")
+        RotatingFileHandler("stevenslav2.log", maxBytes=1024**3, backupCount=1, mode="a")
     ],
-    format="%(name)s @ %(asctime)s: %(message)s",
-    datefmt="%I:%M:%S",
+    format="%(name)20s @ %(asctime)s: %(message)s",
+    datefmt="%m-%d %H:%M:%S",
     level=logging.DEBUG,
 )
 
@@ -145,7 +145,6 @@ def new_link_sync():
     
     rows = conn.execute(
         "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
-        #"SELECT DISTINCT access_token, user_id FROM public.plaid_links" 
     ).fetchall()
     
     for row in tqdm(rows):
@@ -221,7 +220,7 @@ def new_link_sync():
             headers=pave_headers,
             params=params,
         )
-        
+
         mongo_timer = datetime.datetime.now()
         mongo_collection = mongo_db["balances"]
         balances = response.json()["accounts_balances"]
@@ -234,13 +233,11 @@ def new_link_sync():
                 {"user_id": str(user_id)},
                 {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
             )
-            for balance in balances:
-                mongo_collection.update_one(
-                    {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
-                    {"$addToSet": {"balances.accounts_balances.$.balances": balance}},
-                )
+            mongo_collection.update_one(
+                {"user_id": str(user_id)},
+                {"$addToSet": {"balances.accounts_balances": balances}},
+            )
 
-            
             mongo_timer_end = datetime.datetime.now()
             logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
         else:
@@ -517,7 +514,7 @@ def daily_sync():
             "balances": {
                 "available": decrypt(row["balances_available"]),
                 "current": decrypt(row["balances_current"]), 
-                "iso_currency": decrypt(row["balances_iso_currency_code"]),
+                "iso_currency_code": decrypt(row["balances_iso_currency_code"]),
                 "limit": decrypt(row["balances_limit"]),
                 "unofficial_currency_code": decrypt(row["balances_unofficial_currency_code"]) 
             },
