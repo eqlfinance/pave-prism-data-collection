@@ -32,7 +32,7 @@ logging.basicConfig(
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-pave_table = "pave-stage-test"
+pave_table = "pave-stage"
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
@@ -144,8 +144,7 @@ def new_link_sync():
     conn = cm.get_postgres_connection()
     
     rows = conn.execute(
-        #"SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
-        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE user_id='3e570458-39a1-4b7b-9dba-ba29e4e261b4'" 
+        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
     ).fetchall()
     
     for row in tqdm(rows):
@@ -221,7 +220,7 @@ def new_link_sync():
             headers=pave_headers,
             params=params,
         )
-        
+
         mongo_timer = datetime.datetime.now()
         mongo_collection = mongo_db["balances"]
         balances = response.json()["accounts_balances"]
@@ -238,7 +237,7 @@ def new_link_sync():
                 {"user_id": str(user_id)},
                 {"$addToSet": {"balances.accounts_balances": balances}},
             )
-            
+
             mongo_timer_end = datetime.datetime.now()
             logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
         else:
@@ -515,7 +514,7 @@ def daily_sync():
             "balances": {
                 "available": decrypt(row["balances_available"]),
                 "current": decrypt(row["balances_current"]), 
-                "iso_currency": decrypt(row["balances_iso_currency_code"]),
+                "iso_currency_code": decrypt(row["balances_iso_currency_code"]),
                 "limit": decrypt(row["balances_limit"]),
                 "unofficial_currency_code": decrypt(row["balances_unofficial_currency_code"]) 
             },
