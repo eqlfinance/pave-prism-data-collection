@@ -22,17 +22,17 @@ from google.cloud import secretmanager
 # Set up the logging instance
 logging.basicConfig(
     handlers=[
-        RotatingFileHandler("stevenslav2.log", maxBytes=1024**3, backupCount=2, mode="a")
+        RotatingFileHandler("stevenslav2.log", maxBytes=1024**3, backupCount=1, mode="a")
     ],
-    format="%(name)s @ %(asctime)s: %(message)s",
-    datefmt="%I:%M:%S",
+    format="%(name)20s @ %(asctime)s: %(message)s",
+    datefmt="%m-%d %H:%M:%S",
     level=logging.DEBUG,
 )
 
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-pave_table = "pave-stage"
+pave_table = "pave-stage-test"
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
@@ -144,8 +144,8 @@ def new_link_sync():
     conn = cm.get_postgres_connection()
     
     rows = conn.execute(
-        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
-        #"SELECT DISTINCT access_token, user_id FROM public.plaid_links" 
+        #"SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
+        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE user_id='3e570458-39a1-4b7b-9dba-ba29e4e261b4'" 
     ).fetchall()
     
     for row in tqdm(rows):
@@ -234,12 +234,10 @@ def new_link_sync():
                 {"user_id": str(user_id)},
                 {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
             )
-            for balance in balances:
-                mongo_collection.update_one(
-                    {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
-                    {"$addToSet": {"balances.accounts_balances.$.balances": balance}},
-                )
-
+            mongo_collection.update_one(
+                {"user_id": str(user_id)},
+                {"$addToSet": {"balances.accounts_balances": balances}},
+            )
             
             mongo_timer_end = datetime.datetime.now()
             logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
