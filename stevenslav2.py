@@ -556,28 +556,31 @@ def daily_sync():
             )
 
             mongo_timer = datetime.datetime.now()
-            mongo_collection = mongo_db["balances"]
-            balances = response.json()["accounts_balances"]
+            try:
+                mongo_collection = mongo_db["balances"]
+                balances = response.json()["accounts_balances"]
 
+                if len(balances) > 0:
+                    logging.info(f"Inserting {balances} into balances")
 
-            if len(balances) > 0:
-                logging.info(f"Inserting {balances} into balances")
-
-                mongo_collection.update_one(
-                    {"user_id": str(user_id)},
-                    {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
-                )
-                for balance in balances:
                     mongo_collection.update_one(
-                        {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
-                        {"$addToSet": {"balances.accounts_balances.$.balances": balance}}
+                        {"user_id": str(user_id)},
+                        {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
                     )
+                    for balance in balances:
+                        mongo_collection.update_one(
+                            {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
+                            {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance.balances}}}
+                        )
+                else:
+                    logging.warning("Got to daily db insertion but no transactions were found for the date range")
+            except Exception as e:
+                logging.exception(e)
+                logging.error("Could not find user after uploading balances")
 
+            mongo_timer_end = datetime.datetime.now()
+            logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
 
-                mongo_timer_end = datetime.datetime.now()
-                logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
-            else:
-                logging.warning("Got to daily db insertion but no transactions were found for the date range")
         else:
             logging.error("Could not upload balances to mongodb")
         #####################################################################
@@ -675,6 +678,9 @@ conn = cm.get_postgres_connection()
 if __name__ == "__main__":
     process_start = datetime.datetime.now()
     try:
+        if len(sys.argv) == 1:
+            raise Exception("You must provide either new, new2, hourly, daily, or weekly")
+
         which = sys.argv[1]
 
         if which == "new":
@@ -688,7 +694,7 @@ if __name__ == "__main__":
         elif which == "weekly":
             weekly_sync()
         else:
-            raise Exception("You must provide either new_users, hourly, or daily")
+            raise Exception("You must provide either new, new2, hourly, daily, or weekly")
     except Exception as e:
         print(e)
         logging.exception(e)
