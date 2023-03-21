@@ -661,9 +661,9 @@ cm = Connection_Manager()
 conn = cm.get_postgres_connection()
 
 logger = logging.getLogger("stevenslav2")
-logger.setLevel(logging.NOTSET)
+logger.setLevel(logging.DEBUG)
 
-formatter = logging.Formatter('[%(levelname)-8s] %(name)-35s @ %(asctime)s: %(message)s')
+formatter = logging.Formatter('[%(levelname)s] %(name)-10s @ %(asctime)s: %(message)s')
 
 normal_log_handler = RotatingFileHandler('/home/langston/pave-prism/stevenslav2.log', 'a', 1000**3, 2)
 normal_log_handler.setFormatter(formatter)
@@ -679,44 +679,44 @@ if __name__ == "__main__":
         which = sys.argv[1]
 
         if which == "user":
-            handler = RotatingFileHandler('/home/langston/pave-prism/new-user-data-sync.log', 'a', (1000**2)*200, 2)
+            handler = RotatingFileHandler('/home/langston/pave-prism/logs/new-user-data-sync.log', 'a', (1000**2)*200, 2)
             handler.setFormatter(formatter)
-            handler.setLevel(logger.INFO)
+            handler.setLevel(logging.INFO)
             logger.addHandler(handler)
 
-            logger.info(f"\n\t\t\tProcess start: {process_start}")
+            logger.info(f"Process start: {process_start}")
             new_user_sync()
         elif which == "link":
-            handler = RotatingFileHandler('/home/langston/pave-prism/new-link-data-sync.log', 'a', (1000**2)*200, 2)
+            handler = RotatingFileHandler('/home/langston/pave-prism/logs/new-link-data-sync.log', 'a', (1000**2)*200, 2)
             handler.setFormatter(formatter)
-            handler.setLevel(logger.INFO)
+            handler.setLevel(logging.INFO)
             logger.addHandler(handler)
 
-            logger.info(f"\n\t\t\tProcess start: {process_start}")
+            logger.info(f"Process start: {process_start}")
             new_link_sync()
         elif which == "hourly":
-            handler = RotatingFileHandler('/home/langston/pave-prism/hourly-transaction-data-sync.log', 'a', (1000**2)*200, 2)
+            handler = RotatingFileHandler('/home/langston/pave-prism/logs/hourly-transaction-data-sync.log', 'a', (1000**2)*200, 2)
             handler.setFormatter(formatter)
-            handler.setLevel(logger.INFO)
+            handler.setLevel(logging.INFO)
             logger.addHandler(handler)
 
-            logger.info(f"\n\t\t\tProcess start: {process_start}")
+            logger.info(f"Process start: {process_start}")
             hourly_sync()
         elif which == "daily":
-            handler = RotatingFileHandler('/home/langston/pave-prism/daily-balance-data-sync.log', 'a', (1000**2)*200, 2)
+            handler = RotatingFileHandler('/home/langston/pave-prism/logs/daily-balance-data-sync.log', 'a', (1000**2)*200, 2)
             handler.setFormatter(formatter)
-            handler.setLevel(logger.INFO)
+            handler.setLevel(logging.INFO)
             logger.addHandler(handler)
 
-            logger.info(f"\n\t\t\tProcess start: {process_start}")
+            logger.info(f"Process start: {process_start}")
             daily_sync()
         elif which == "weekly":
-            handler = RotatingFileHandler('/home/langston/pave-prism/weekly-recurring-data-sync.log', 'a', (1000**2)*200, 2)
+            handler = RotatingFileHandler('/home/langston/pave-prism/logs/weekly-recurring-data-sync.log', 'a', (1000**2)*200, 2)
             handler.setFormatter(formatter)
-            handler.setLevel(logger.INFO)
+            handler.setLevel(logging.INFO)
             logger.addHandler(handler)
 
-            logger.info(f"\n\t\t\tProcess start: {process_start}")
+            logger.info(f"Process start: {process_start}")
             weekly_sync()
         else:
             raise Exception("You must provide either user, link, hourly, daily, or weekly")
