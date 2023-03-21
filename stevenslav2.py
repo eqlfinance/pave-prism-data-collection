@@ -30,7 +30,7 @@ logging.basicConfig(
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-pave_table = "pave"
+pave_table = "pave-stage"
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
@@ -570,7 +570,7 @@ def daily_sync():
                     for balance in balances:
                         mongo_collection.update_one(
                             {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
-                            {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance.balances}}}
+                            {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance["balances"]}}}
                         )
                 else:
                     logging.warning("Got to daily db insertion but no transactions were found for the date range")
