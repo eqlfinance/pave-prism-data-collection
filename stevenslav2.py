@@ -41,7 +41,6 @@ pave_headers = {
     "x-api-key": pave_x_api_key,
 }
 
-
 def base64_decode(val: str) -> bytes:
     return base64.urlsafe_b64decode(val.encode("ascii"))
 
@@ -65,6 +64,7 @@ def handle_pave_request(
     last_wait: float = 0,
 ) -> requests.Response:
 
+    logging.info(f"Making pave request to {endpoint}")
     request_timer = datetime.datetime.now()
 
     if method == "get":
@@ -77,19 +77,19 @@ def handle_pave_request(
     res_code = res.status_code
     res_json = json.dumps(res.json())
     logging.info(
-        f"\tResponse: {res_code} \n{res_json[:100]} ... {res_json[-100:]}"
+        f"\tResponse: {res_code} -> {res_json[:100]} ... {res_json[-100:]}"
     )
 
     if res_code == 429:
         sleep = 1 if last_wait == 0 else last_wait * 2
-        logging.error(f"Request limit reached, waiting {sleep} second(s)")
+        logging.error(f"\tRequest limit reached, waiting {sleep} second(s)")
         time.sleep(sleep)
         return handle_pave_request(
             user_id, method, endpoint, payload, headers, params, sleep
         )
     else:
         request_timer_end = datetime.datetime.now()
-        logging.info(f"  Pave request to {endpoint} took: {request_timer_end-request_timer}")
+        logging.info(f"Pave request to {endpoint} took: {request_timer_end-request_timer}\n")
 
         return res
 
@@ -118,7 +118,7 @@ def insert_response_into_db(
         logging.warning("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()))
 
     mongo_timer_end = datetime.datetime.now()
-    logging.info(f"  DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}")
+    logging.info(f"DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}\n")
 
 
 '''
@@ -130,12 +130,12 @@ def new_link_sync():
         handlers=[
             RotatingFileHandler("/home/langston/pave-prism/logs/new-link-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
         ],
-        format="%(name)30s @ %(asctime)s: %(message)s",
+        format="%(name)-40s @ %(asctime)s: %(message)s",
         datefmt="%m-%d %H:%M:%S",
         level=logging.DEBUG,
     )
 
-    logging.info("\nRuninng new link sync:\n")
+    logging.info("Runinng new link sync:\n")
     cm = Connection_Manager()
 
     # Open connection to postgres db
@@ -155,7 +155,7 @@ def new_link_sync():
             json={"access_token": f"{access_token}"},
         )
         res = res.json()
-        logging.debug(f"Got response from pave-agent: {res}")
+        logging.debug(f"\tGot response from pave-agent: {res}")
 
         # Give pave agent some time to process transactions
         time.sleep(2)
@@ -184,28 +184,24 @@ def new_link_sync():
         transactions = response.json()["transactions"]
 
         if len(transactions) > 0:
-            logging.info(f"Inserting {json.dumps(transactions)[:200]}... into transactions")
+            logging.info(f"\tInserting {json.dumps(transactions)[:200]}... into transactions")
 
-            # Commenting out upsertion code because this user will be picked up by new_user_sync
             mongo_collection.update_one(
                 {"user_id": str(user_id)},
                 {
                     "$addToSet": {"transactions.transactions": {"$each": transactions}},
-                    #"$setOnInsert": {"transactions": transactions, "user_id": user_id, "date"}
                     "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
-                },
-                #upsert=True
+                }
             )
 
             mongo_timer_end = datetime.datetime.now()
-            logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+            logging.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
         else:
-            logging.warning("Got to new link transaction db insertion but no transactions were found for the date range")
+            logging.warning("\tGot to new link transaction db insertion but no transactions were found for the date range")
 
         if response.status_code == 200:
             transactions = response.json()["transactions"]
             transaction_date_str = transactions[len(transactions)-1]["date"]
-            logging.info(f" > Earliest transaction: {transaction_date_str}")
             params["start_date"] = transaction_date_str
         #####################################################################
 
@@ -225,7 +221,7 @@ def new_link_sync():
 
 
         if len(balances) > 0:
-            logging.info(f"Inserting {json.dumps(balances)[:200]} into balances")
+            logging.info(f"\tInserting {json.dumps(balances)[:200]} into balances")
 
             mongo_collection.update_one(
                 {"user_id": str(user_id)},
@@ -237,9 +233,9 @@ def new_link_sync():
             )
 
             mongo_timer_end = datetime.datetime.now()
-            logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+            logging.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
         else:
-            logging.warning("Got to new link balance db insertion but no transactions were found for the date range")
+            logging.warning("\tGot to new link balance db insertion but no transactions were found for the date range")
         #####################################################################
 
 ##################################################################################################################################################################################################
@@ -253,12 +249,12 @@ def new_user_sync():
         handlers=[
             RotatingFileHandler("/home/langston/pave-prism/logs/new-user-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
         ],
-        format="%(name)30s @ %(asctime)s: %(message)s",
+        format="%(name)-40s @ %(asctime)s: %(message)s",
         datefmt="%m-%d %H:%M:%S",
         level=logging.DEBUG,
     )
 
-    logging.info("\nRuninng new user sync:\n")
+    logging.info("Runinng new user sync:\n")
     cm = Connection_Manager()
 
     # Open connection to postgres db
@@ -286,7 +282,7 @@ def new_user_sync():
                 json={"access_token": f"{access_token}"},
             )
             res = res.json()
-            logging.debug(f"Got response from pave-agent: {res}")
+            logging.debug(f"\tGot response from pave-agent: {res}")
 
             # Give pave agent some time to process transactions
             time.sleep(2)
@@ -322,7 +318,6 @@ def new_user_sync():
         if response.status_code == 200:
             transactions = response.json()["transactions"]
             transaction_date_str = transactions[len(transactions)-1]["date"]
-            logging.info(f" > Earliest transaction: {transaction_date_str}")
             params["start_date"] = transaction_date_str
         #####################################################################
 
@@ -360,7 +355,7 @@ def new_user_sync():
 
         if response.status_code == 200:
             for title, object in response.json().items():
-                logging.info("Inserting response into: {}".format(title))
+                logging.info("\tInserting response into: {}".format(title))
                 mongo_collection = mongo_db[title]
                 mongo_collection.replace_one(
                     {"user_id": user_id},
@@ -407,12 +402,12 @@ def hourly_sync():
         handlers=[
             RotatingFileHandler("/home/langston/pave-prism/logs/hourly-transaction-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
         ],
-        format="%(name)30s @ %(asctime)s: %(message)s",
+        format="%(name)-40s @ %(asctime)s: %(message)s",
         datefmt="%m-%d %H:%M:%S",
         level=logging.DEBUG,
     )
 
-    logging.info("\nRuninng Hourly Sync:\n")
+    logging.info("Runinng Hourly Sync:\n")
 
     rows = conn.execute(
         "SELECT * FROM public.plaid_transactions WHERE plaid_transactions.date >= (NOW() - INTERVAL '70 minutes')"
@@ -480,7 +475,7 @@ def hourly_sync():
             transactions = response.json()["transactions"]
 
             if len(transactions) > 0:
-                logging.info(f"Inserting {transactions} into transactions")
+                logging.info(f"\tInserting {transactions} into transactions")
 
                 mongo_collection.update_one(
                     {"user_id": str(user_id)},
@@ -491,9 +486,9 @@ def hourly_sync():
                 )
 
                 mongo_timer_end = datetime.datetime.now()
-                logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+                logging.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
             else:
-                logging.warning("Got to hourly db insertion but no transactions were found for the date range")
+                logging.warning("\tGot to hourly db insertion but no transactions were found for the date range")
         else:
             logging.error("Could not upload transaction to mongodb")
         #####################################################################
@@ -509,12 +504,12 @@ def daily_sync():
         handlers=[
             RotatingFileHandler("/home/langston/pave-prism/logs/daily-balance-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
         ],
-        format="%(name)30s @ %(asctime)s: %(message)s",
+        format="%(name)-40s @ %(asctime)s: %(message)s",
         datefmt="%m-%d %H:%M:%S",
         level=logging.DEBUG,
     )
 
-    logging.info("\nRuninng Daily Balance Sync:\n")
+    logging.info("Runinng Daily Balance Sync:\n")
 
     rows = conn.execute(
         "SELECT DISTINCT id FROM public.users"
@@ -530,7 +525,7 @@ def daily_sync():
         plaid_link_ids = [str(row[0]) for row in rows]
 
         if len(plaid_link_ids) == 0:
-            logging.warning(f"No plaid links for user {user_id}")
+            logging.warning(f"\tNo plaid links for user {user_id}")
             continue
 
         rows = conn.execute(
@@ -591,7 +586,7 @@ def daily_sync():
                 balances = response.json()["accounts_balances"]
 
                 if len(balances) > 0:
-                    logging.info(f"Inserting {balances} into balances")
+                    logging.info(f"\tInserting {balances} into balances")
 
                     mongo_collection.update_one(
                         {"user_id": str(user_id)},
@@ -603,16 +598,16 @@ def daily_sync():
                             {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance["balances"]}}}
                         )
                 else:
-                    logging.warning("Got to daily db insertion but no transactions were found for the date range")
+                    logging.warning("\tGot to daily db insertion but no transactions were found for the date range")
             except Exception as e:
                 logging.exception(e)
-                logging.error("Could not find user after uploading balances")
+                logging.error("\tCould not find user after uploading balances")
 
             mongo_timer_end = datetime.datetime.now()
-            logging.info(f"  DB insertion took: {mongo_timer_end-mongo_timer}")
+            logging.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
 
         else:
-            logging.error("Could not upload balances to mongodb")
+            logging.error("\tCould not upload balances to mongodb")
         #####################################################################
 
 ##################################################################################################################################################################################################
@@ -626,12 +621,12 @@ def weekly_sync():
         handlers=[
             RotatingFileHandler("/home/langston/pave-prism/logs/weekly-recurring-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
         ],
-        format="%(name)30s @ %(asctime)s: %(message)s",
+        format="%(name)-40s @ %(asctime)s: %(message)s",
         datefmt="%m-%d %H:%M:%S",
         level=logging.DEBUG,
     )
 
-    logging.info("\nRuninng weekly sync:\n")
+    logging.info("Runinng weekly sync:\n")
     cm = Connection_Manager()
 
     # Open connection to postgres db
@@ -672,7 +667,7 @@ def weekly_sync():
 
         if response.status_code == 200:
             for title, object in response.json().items():
-                logging.info("Inserting response into: {}".format(title))
+                logging.info("\tInserting response into: {}".format(title))
                 mongo_collection = mongo_db[title]
                 mongo_collection.replace_one(
                     {"user_id": user_id},
@@ -717,6 +712,7 @@ conn = cm.get_postgres_connection()
 
 if __name__ == "__main__":
     process_start = datetime.datetime.now()
+    logging.info(f"\n\t\t\tProcess start: {process_start}")
     try:
         if len(sys.argv) == 1:
             raise Exception("You must provide either user, link, hourly, daily, or weekly")
@@ -742,4 +738,4 @@ if __name__ == "__main__":
     cm.close_pymongo_connection()
     cm.close_postgres_connection(conn)
     process_end = datetime.datetime.now()
-    logging.info(f"\nTotal runtime: {process_end-process_start}\n\n")
+    logging.info(f"Total runtime: {process_end-process_start}\n\n")
