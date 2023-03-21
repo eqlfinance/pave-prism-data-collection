@@ -17,16 +17,6 @@ from db_connections import Connection_Manager
 
 from google.cloud import secretmanager
 
-# Set up the logging instance
-logging.basicConfig(
-    handlers=[
-        RotatingFileHandler("/home/langston/pave-prism/stevenslav2.log", maxBytes=1024**3, backupCount=1, mode="a")
-    ],
-    format="%(name)-30s @ %(asctime)s: %(message)s",
-    datefmt="%m-%d %H:%M:%S",
-    level=logging.DEBUG,
-)
-
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
@@ -135,6 +125,16 @@ def insert_response_into_db(
     Ran every 30 minutes
 '''
 def new_link_sync():
+    # Set up the logging instance
+    logging.basicConfig(
+        handlers=[
+            RotatingFileHandler("/home/langston/pave-prism/logs/new-link-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
+        ],
+        format="%(name)30s @ %(asctime)s: %(message)s",
+        datefmt="%m-%d %H:%M:%S",
+        level=logging.DEBUG,
+    )
+
     logging.info("\nRuninng new link sync:\n")
     cm = Connection_Manager()
 
@@ -248,6 +248,16 @@ def new_link_sync():
     Ran every 30 minutes
 '''
 def new_user_sync():
+    # Set up the logging instance
+    logging.basicConfig(
+        handlers=[
+            RotatingFileHandler("/home/langston/pave-prism/logs/new-user-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
+        ],
+        format="%(name)30s @ %(asctime)s: %(message)s",
+        datefmt="%m-%d %H:%M:%S",
+        level=logging.DEBUG,
+    )
+
     logging.info("\nRuninng new user sync:\n")
     cm = Connection_Manager()
 
@@ -392,6 +402,16 @@ def new_user_sync():
     Hourly sync to update transactions created in the last hour
 '''
 def hourly_sync():
+    # Set up the logging instance
+    logging.basicConfig(
+        handlers=[
+            RotatingFileHandler("/home/langston/pave-prism/logs/hourly-transaction-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
+        ],
+        format="%(name)30s @ %(asctime)s: %(message)s",
+        datefmt="%m-%d %H:%M:%S",
+        level=logging.DEBUG,
+    )
+
     logging.info("\nRuninng Hourly Sync:\n")
 
     rows = conn.execute(
@@ -484,6 +504,16 @@ def hourly_sync():
     Daily sync to update user balances for all users in the db for yesterday
 '''
 def daily_sync():
+    # Set up the logging instance
+    logging.basicConfig(
+        handlers=[
+            RotatingFileHandler("/home/langston/pave-prism/logs/daily-balance-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
+        ],
+        format="%(name)30s @ %(asctime)s: %(message)s",
+        datefmt="%m-%d %H:%M:%S",
+        level=logging.DEBUG,
+    )
+
     logging.info("\nRuninng Daily Balance Sync:\n")
 
     rows = conn.execute(
@@ -591,6 +621,16 @@ def daily_sync():
     Weekly/Daily 2 sync to update unified insight data
 '''
 def weekly_sync():
+    # Set up the logging instance
+    logging.basicConfig(
+        handlers=[
+            RotatingFileHandler("/home/langston/pave-prism/logs/weekly-recurring-data-sync.log", maxBytes=1000**2, backupCount=1, mode="a")
+        ],
+        format="%(name)30s @ %(asctime)s: %(message)s",
+        datefmt="%m-%d %H:%M:%S",
+        level=logging.DEBUG,
+    )
+
     logging.info("\nRuninng weekly sync:\n")
     cm = Connection_Manager()
 
@@ -679,13 +719,13 @@ if __name__ == "__main__":
     process_start = datetime.datetime.now()
     try:
         if len(sys.argv) == 1:
-            raise Exception("You must provide either new, new2, hourly, daily, or weekly")
+            raise Exception("You must provide either user, link, hourly, daily, or weekly")
 
         which = sys.argv[1]
 
-        if which == "new":
+        if which == "user":
             new_user_sync()
-        elif which == "new2":
+        elif which == "link":
             new_link_sync()
         elif which == "hourly":
             hourly_sync()
@@ -694,7 +734,7 @@ if __name__ == "__main__":
         elif which == "weekly":
             weekly_sync()
         else:
-            raise Exception("You must provide either new, new2, hourly, daily, or weekly")
+            raise Exception("You must provide either user, link, hourly, daily, or weekly")
     except Exception as e:
         print(e)
         logging.exception(e)
