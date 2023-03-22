@@ -1,2 +1,4 @@
-__pycache__/
-*.log
+**/__pycache__/
+**/*.log
+Langston/
+**/.DS_Store
