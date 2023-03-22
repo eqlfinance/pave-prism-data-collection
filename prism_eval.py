@@ -198,16 +198,15 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
     )
     res = requests.post(endpoint, data=json.dumps(payload), headers=headers)
     response = convert_nans(res.json())
-    logging.debug(f"\t{response=}")
+    logging.debug(f"Adding response: {json.dumps(response)[:100]}")
 
     mongo_db.responses.insert_one(
-        {"user_id": user_id},
         {
             "created_at": datetime.datetime.now(),
             "status_code": res.status_code,
             "response": response,
             "user_id": user_id,
-        },
+        }
     )
 
     try:
@@ -219,7 +218,6 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         income = response["products"]["income"]["result"]
 
         mongo_db.cashscores.insert_one(
-            {"user_id": user_id},
             {
                 "created_at": datetime.datetime.now(),
                 "cashscore": cashscore,
@@ -228,7 +226,6 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         )
 
         mongo_db.insights.insert_one(
-            {"user_id": user_id},
             {
                 "created_at": datetime.datetime.now(),
                 "insights": insights,
@@ -237,7 +234,6 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         )
 
         mongo_db.categories.insert_one(
-            {"user_id": user_id},
             {
                 "created_at": datetime.datetime.now(),
                 "categories": categories,
@@ -246,7 +242,6 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
         )
 
         mongo_db.incomes.insert_one(
-            {"user_id": user_id},
             {
                 "created_at": datetime.datetime.now(),
                 "income": income,
