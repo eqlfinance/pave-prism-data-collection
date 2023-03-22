@@ -219,7 +219,7 @@ def new_link_sync():
             )
             mongo_collection.update_one(
                 {"user_id": str(user_id)},
-                {"$addToSet": {"balances.accounts_balances": balances}},
+                {"$set": {"balances.account_balances": balances}}
             )
 
             mongo_timer_end = datetime.datetime.now()
