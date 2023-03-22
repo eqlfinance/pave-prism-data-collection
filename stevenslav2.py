@@ -104,16 +104,20 @@ def insert_response_into_db(
     res_code = res.status_code
 
     if res_code == 200:
-        mongo_collection.replace_one(
-            {"user_id": user_id},
-            {
-                response_column_name: res.json(),
-                "user_id": user_id,
-                "response_code": res.status_code,
-                "date": datetime.datetime.now(),
-            },
-            upsert=True
-        )
+        try:
+            mongo_collection.replace_one(
+                {"user_id": user_id},
+                {
+                    response_column_name: res.json(),
+                    "user_id": user_id,
+                    "response_code": res.status_code,
+                    "date": datetime.datetime.now(),
+                },
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}")
+            logger.error(e)
     else:
         logger.warning("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()))
 
@@ -169,27 +173,34 @@ def new_link_sync():
             params=params,
         )
 
-        mongo_timer = datetime.datetime.now()
-        mongo_collection = mongo_db["transactions"]
-        transactions = response.json()["transactions"]
-
-        if len(transactions) > 0:
-            logger.info(f"\tInserting {json.dumps(transactions)[:200]}... into transactions")
-
-            mongo_collection.update_one(
-                {"user_id": str(user_id)},
-                {
-                    "$addToSet": {"transactions.transactions": {"$each": transactions}},
-                    "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
-                }
-            )
-
-            mongo_timer_end = datetime.datetime.now()
-            logger.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
+        if response.status_code != 200:
+            logger.exception("Non 200 return code on transactions")
+            logger.exception(response.json())
         else:
-            logger.warning("\tGot to new link transaction db insertion but no transactions were found for the date range")
+            mongo_timer = datetime.datetime.now()
+            mongo_collection = mongo_db["transactions"]
+            transactions = response.json()["transactions"]
 
-        if response.status_code == 200:
+            if len(transactions) > 0:
+                logger.info(f"\tInserting {json.dumps(transactions)[:200]}... into transactions")
+
+                try:
+                    mongo_collection.update_one(
+                        {"user_id": str(user_id)},
+                        {
+                            "$addToSet": {"transactions.transactions": {"$each": transactions}},
+                            "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
+                        }
+                    )
+                except Exception as e:
+                    logger.error(f"COULD NOT UPDATE TRANSACTIONS FOR USER {user_id} ON LINK SYNC")
+                    logger.error(e)
+
+                mongo_timer_end = datetime.datetime.now()
+                logger.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
+            else:
+                logger.warning("\tGot to new link transaction db insertion but no transactions were found for the date range")
+
             transactions = response.json()["transactions"]
             transaction_date_str = transactions[len(transactions)-1]["date"]
             params["start_date"] = transaction_date_str
@@ -205,28 +216,36 @@ def new_link_sync():
             params=params,
         )
 
-        mongo_timer = datetime.datetime.now()
-        mongo_collection = mongo_db["balances"]
-        balances = response.json()["accounts_balances"]
-
-
-        if len(balances) > 0:
-            logger.info(f"\tInserting {json.dumps(balances)[:200]} into balances")
-
-            mongo_collection.update_one(
-                {"user_id": str(user_id)},
-                {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
-            )
-            mongo_collection.update_one(
-                {"user_id": str(user_id)},
-                {"$set": {"balances.account_balances": balances}}
-            )
-
-            mongo_timer_end = datetime.datetime.now()
-            logger.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
+        if response.status_code != 200:
+            logger.exception("Non 200 return code on transactions")
+            logger.exception(response.json())
         else:
-            logger.warning("\tGot to new link balance db insertion but no transactions were found for the date range")
-        #####################################################################
+            mongo_timer = datetime.datetime.now()
+            mongo_collection = mongo_db["balances"]
+            balances = response.json()["accounts_balances"]
+
+
+            if len(balances) > 0:
+                logger.info(f"\tInserting {json.dumps(balances)[:200]} into balances")
+
+                try:
+                    mongo_collection.update_one(
+                        {"user_id": str(user_id)},
+                        {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
+                    )
+                    mongo_collection.update_one(
+                        {"user_id": str(user_id)},
+                        {"$set": {"balances.account_balances": balances}}
+                    )
+                except Exception as e:
+                    logger.error(f"COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC")
+                    logger.error(e)
+
+                mongo_timer_end = datetime.datetime.now()
+                logger.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
+            else:
+                logger.warning("\tGot to new link balance db insertion but no transactions were found for the date range")
+            #####################################################################
 
 ##################################################################################################################################################################################################
 
@@ -294,7 +313,6 @@ def new_user_sync():
             collection_name="transactions",
             response_column_name="transactions",
         )
-        transaction_date_str=None
         if response.status_code == 200:
             transactions = response.json()["transactions"]
             transaction_date_str = transactions[len(transactions)-1]["date"]
@@ -337,16 +355,22 @@ def new_user_sync():
             for title, object in response.json().items():
                 logger.info("\tInserting response into: {}".format(title))
                 mongo_collection = mongo_db[title]
-                mongo_collection.replace_one(
-                    {"user_id": user_id},
-                    {
-                        title: object,
-                        "user_id": user_id,
-                        "response_code": response.status_code,
-                        "date": datetime.datetime.now(),
-                    },
-                    upsert=True,
-                )
+
+                try:
+                    mongo_collection.replace_one(
+                        {"user_id": user_id},
+                        {
+                            title: object,
+                            "user_id": user_id,
+                            "response_code": response.status_code,
+                            "date": datetime.datetime.now(),
+                        },
+                        upsert=True,
+                    )
+                except Exception as e:
+                    logger.error(f"COULD NOT INSERT {title} FOR USER {user_id} ON NEW USER SYNC")
+                    logger.error(e)
+
         else:
             logger.warning("\tCan't insert: {} {}\n".format(response.status_code, response.json()))
         #####################################################################
@@ -445,7 +469,7 @@ def hourly_sync():
             transactions = response.json()["transactions"]
 
             if len(transactions) > 0:
-                logger.info(f"\tInserting {transactions} into transactions")
+                logger.info(f"\tInserting {json.dumps(transactions)[:100]} into transactions")
 
                 mongo_collection.update_one(
                     {"user_id": str(user_id)},
@@ -460,7 +484,7 @@ def hourly_sync():
             else:
                 logger.warning("\tGot to hourly db insertion but no transactions were found for the date range")
         else:
-            logger.error("Could not upload transaction to mongodb")
+            logger.error("Could not upload transactions to mongodb")
         #####################################################################
 
 ##################################################################################################################################################################################################
@@ -546,17 +570,22 @@ def daily_sync():
                 balances = response.json()["accounts_balances"]
 
                 if len(balances) > 0:
-                    logger.info(f"\tInserting {balances} into balances")
+                    logger.info(f"\tInserting {json.dumps(balances)[:100]} into balances")
 
-                    mongo_collection.update_one(
-                        {"user_id": str(user_id)},
-                        {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
-                    )
-                    for balance in balances:
+                    try:
                         mongo_collection.update_one(
-                            {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
-                            {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance["balances"]}}}
+                            {"user_id": str(user_id)},
+                            {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
                         )
+                        for balance in balances:
+                            mongo_collection.update_one(
+                                {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
+                                {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance["balances"]}}}
+                            )
+                    except Exception as e:
+                        logger.error(f"COULD NOT UPDATE BALANCE FOR USER {user_id} ON DAILY SYNC")
+                        logger.error(e)
+
                 else:
                     logger.warning("\tGot to daily db insertion but no transactions were found for the date range")
             except Exception as e:
@@ -619,16 +648,22 @@ def weekly_sync():
             for title, object in response.json().items():
                 logger.info("\tInserting response into: {}".format(title))
                 mongo_collection = mongo_db[title]
-                mongo_collection.replace_one(
-                    {"user_id": user_id},
-                    {
-                        title: object,
-                        "user_id": user_id,
-                        "response_code": response.status_code,
-                        "date": datetime.datetime.now(),
-                    },
-                    upsert=True,
-                )
+
+                try:
+                    mongo_collection.replace_one(
+                        {"user_id": user_id},
+                        {
+                            title: object,
+                            "user_id": user_id,
+                            "response_code": response.status_code,
+                            "date": datetime.datetime.now(),
+                        },
+                        upsert=True,
+                    )
+                except Exception as e:
+                    logger.error(f"COULD NOT UPDATE {title} FOR USER {user_id} ON DAILY SYNC")
+                    logger.error(e)
+
         else:
             logger.warning("\tCan't insert: {} {}\n".format(response.status_code, response.json()))
         #####################################################################
