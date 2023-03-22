@@ -20,17 +20,17 @@ from google.cloud import secretmanager
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-pave_table = "pave"
+pave_table = "pave-stage"
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/pave-agent-decryption-keys/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/pave-agent-decryption-keys/versions/latest"
 ).payload.data.decode("UTF-8")
 keys = json.loads(keys)["KEYS"]
 
 # Pave url necessities
 pave_str = secret_manager_client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/pave-prism-info/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/pave-prism-info/versions/latest"
 ).payload.data.decode("UTF-8")
 
 pave_data = json.loads(pave_str)
