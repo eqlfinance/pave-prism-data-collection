@@ -136,7 +136,7 @@ def new_link_sync():
     conn = cm.get_postgres_connection()
 
     rows = conn.execute(
-        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '6 hours')"
+        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '35')"
     ).fetchall()
 
     for row in tqdm(rows):
@@ -231,11 +231,13 @@ def new_link_sync():
                 try:
                     mongo_collection.update_one(
                         {"user_id": str(user_id)},
-                        {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
+                        {"$set": {"balances.accounts_balances": balances}}
                     )
+
                     mongo_collection.update_one(
                         {"user_id": str(user_id)},
-                        {"$set": {"balances.account_balances": balances}}
+                        {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}},
+                        bypass_document_validation = True 
                     )
                 except Exception as e:
                     logger.error(f"COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC")
@@ -260,7 +262,7 @@ def new_user_sync():
     conn = cm.get_postgres_connection()
 
     rows = conn.execute(
-        "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '6 hours')"
+        "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
         #"SELECT DISTINCT id FROM public.users"
     ).fetchall()
 
@@ -570,18 +572,20 @@ def daily_sync():
                 balances = response.json()["accounts_balances"]
 
                 if len(balances) > 0:
-                    logger.info(f"\tInserting {json.dumps(balances)[:100]} into balances")
 
                     try:
-                        mongo_collection.update_one(
-                            {"user_id": str(user_id)},
-                            {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}}
-                        )
                         for balance in balances:
+                            logger.info(f"\tInserting {json.dumps(balance['balances'])[:100]} into balances")
                             mongo_collection.update_one(
                                 {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance["account_id"]}}},
                                 {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance["balances"]}}}
                             )
+
+                        mongo_collection.update_one(
+                            {"user_id": str(user_id)},
+                            {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}},
+                            bypass_document_validation = True
+                        )
                     except Exception as e:
                         logger.error(f"COULD NOT UPDATE BALANCE FOR USER {user_id} ON DAILY SYNC")
                         logger.error(e)
