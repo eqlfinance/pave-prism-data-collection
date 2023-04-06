@@ -14,13 +14,13 @@ class Connection_Manager:
         client = secretmanager.SecretManagerServiceClient()
 
         CREDS = client.access_secret_version(
-            name=f"projects/eql-data-processing-stage/secrets/eql-backend-service-stage-creds/versions/latest"
+            name=f"projects/eql-data-processing/secrets/eql-backend-service-dev-creds/versions/latest"
         ).payload.data.decode("UTF-8")
 
         creds_obj = json.loads(CREDS)
 
         DB_PARAMS = client.access_secret_version(
-            name=f"projects/eql-data-processing-stage/secrets/eql-backend-service-stage-db/versions/latest"
+            name=f"projects/eql-data-processing/secrets/eql-backend-service-dev-db/versions/latest"
         ).payload.data.decode("UTF-8")
 
         db_params_obj = json.loads(DB_PARAMS)
@@ -45,7 +45,7 @@ class Connection_Manager:
         )
 
         mongodb_uri = client.access_secret_version(
-            name=f"projects/eql-data-processing-stage/secrets/mongodb-uri/versions/latest"
+            name=f"projects/eql-data-processing/secrets/mongodb-uri/versions/latest"
         ).payload.data.decode("UTF-8")
 
         self.mongo_client = pymongo.MongoClient(mongodb_uri)
