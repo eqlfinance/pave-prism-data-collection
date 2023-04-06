@@ -317,8 +317,9 @@ def new_user_sync():
         )
         if response.status_code == 200:
             transactions = response.json()["transactions"]
-            transaction_date_str = transactions[len(transactions)-1]["date"]
-            params["start_date"] = transaction_date_str
+            if len(transactions) > 0:
+                transaction_date_str = transactions[len(transactions)-1]["date"]
+                params["start_date"] = transaction_date_str
         #####################################################################
 
         response = handle_pave_request(
@@ -672,26 +673,25 @@ def weekly_sync():
             logger.warning("\tCan't insert: {} {}\n".format(response.status_code, response.json()))
         #####################################################################
 
-        # This creates a pretty big slowdown and we're not using it so I'll keep it
-        # commented for now
-        # # Store the attribute data from pave
-        # params = {"date": end_date_str}
-        # response = handle_pave_request(
-        #     user_id=user_id,
-        #     method="get",
-        #     endpoint=f"{pave_base_url}/{user_id}/attributes",
-        #     payload=None,
-        #     headers=pave_headers,
-        #     params=params,
-        # )
-        # insert_response_into_db(
-        #     user_id=user_id,
-        #     res=response,
-        #     mongo_db=mongo_db,
-        #     collection_name="attributes",
-        #     response_column_name="attributes",
-        # )
-        # #####################################################################
+        # We may actually want this data for decisioning so we can take the slowdown
+        # Store the attribute data from pave
+        params = {"date": end_date_str}
+        response = handle_pave_request(
+            user_id=user_id,
+            method="get",
+            endpoint=f"{pave_base_url}/{user_id}/attributes",
+            payload=None,
+            headers=pave_headers,
+            params=params,
+        )
+        insert_response_into_db(
+            user_id=user_id,
+            res=response,
+            mongo_db=mongo_db,
+            collection_name="attributes",
+            response_column_name="attributes",
+        )
+        #####################################################################
 
 ##################################################################################################################################################################################################
 
