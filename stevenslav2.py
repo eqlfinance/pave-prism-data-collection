@@ -136,7 +136,7 @@ def new_link_sync():
     conn = cm.get_postgres_connection()
 
     rows = conn.execute(
-        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '35')"
+        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
     ).fetchall()
 
     for row in tqdm(rows):
