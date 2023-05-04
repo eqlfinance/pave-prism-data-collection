@@ -43,7 +43,7 @@ pave_headers = {
 
 def log_this(message:str, severity:str = "debug"):
     logger.log(logging._nameToLevel[severity.upper()], message)
-    subprocess.run(["gcloud", "logging", "write", "stevenslav", message, f"--severity={severity.upper()}", "--quiet"])
+    subprocess.run(["gcloud", "logging", "write", "stevenslav-stage", message, f"--severity={severity.upper()}", "--quiet"])
 
 def base64_decode(val: str) -> bytes:
     return base64.urlsafe_b64decode(val.encode("ascii"))
