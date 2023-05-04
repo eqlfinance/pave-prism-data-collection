@@ -1,4 +1,5 @@
 import datetime
+import subprocess
 import requests
 import json
 import logging
@@ -41,6 +42,10 @@ pave_headers = {
     "x-api-key": pave_x_api_key,
 }
 
+def log_this(message:str, severity:str = "debug"):
+    logger.log(logging._nameToLevel[severity.upper()], message)
+    subprocess.run(["gcloud", "logging", "write", "stevenslav", message, f"--severity={severity.upper()}"])
+
 def base64_decode(val: str) -> bytes:
     return base64.urlsafe_b64decode(val.encode("ascii"))
 
@@ -64,7 +69,8 @@ def handle_pave_request(
     last_wait: float = 0,
 ) -> requests.Response:
 
-    logger.info(f"Making pave request to {endpoint}")
+    #logger.info(f"Making pave request to {endpoint}")
+    log_this(f"Making pave request to {endpoint}", "info")
     request_timer = datetime.datetime.now()
 
     if method == "get":
@@ -76,29 +82,33 @@ def handle_pave_request(
 
     res_code = res.status_code
     res_json = json.dumps(res.json())
-    logger.info(
-        f"\tResponse: {res_code} -> {res_json[:100]} ... {res_json[-100:]}"
-    )
+    log_this(f"\tResponse: {res_code} -> {res_json[:100]} ... {res_json[-100:]}", "info")
+    # logger.info(
+    #     f"\tResponse: {res_code} -> {res_json[:100]} ... {res_json[-100:]}"
+    # )
 
     if res_code == 429:
         sleep = 1 if last_wait == 0 else last_wait * 2
-        logger.error(f"\tRequest limit reached, waiting {sleep} second(s)")
+        log_this(f"\tRequest limit reached, waiting {sleep} second(s)", "error")
+        #logger.error(f"\tRequest limit reached, waiting {sleep} second(s)")
         time.sleep(sleep)
         return handle_pave_request(
             user_id, method, endpoint, payload, headers, params, sleep
         )
     else:
         request_timer_end = datetime.datetime.now()
-        logger.info(f"Pave request to {endpoint} took: {request_timer_end-request_timer}\n")
+        log_this(f"Pave request to {endpoint} took: {request_timer_end-request_timer}\n", "info")
+        #logger.info(f"Pave request to {endpoint} took: {request_timer_end-request_timer}\n")
 
         return res
 
 def insert_response_into_db(
     user_id: str, res, mongo_db, collection_name: str, response_column_name: str
 ):
-    logger.info(
-        "Inserting response into: {}.{}".format(collection_name, response_column_name)
-    )
+    log_this("Inserting response into: {}.{}".format(collection_name, response_column_name), "info")
+    # logger.info(
+    #     "Inserting response into: {}.{}".format(collection_name, response_column_name)
+    # )
     mongo_timer = datetime.datetime.now()
     mongo_collection = mongo_db[collection_name]
     res_code = res.status_code
@@ -116,20 +126,25 @@ def insert_response_into_db(
                 upsert=True
             )
         except Exception as e:
-            logger.error(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}")
-            logger.error(e)
+            log_this(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}", "error")
+            log_this(f"{e}", "error")
+            #logger.error(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}")
+            #logger.error(e)
     else:
-        logger.warning("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()))
+        log_this("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()), "warning")
+        #logger.warning("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()))
 
     mongo_timer_end = datetime.datetime.now()
-    logger.info(f"DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}\n")
+    log_this(f"DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}\n", "warning")
+    #logger.info(f"DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}\n")
 
 
 '''
     Ran every 30 minutes
 '''
 def new_link_sync():
-    logger.info("Runinng new link sync:\n")
+    log_this("Runinng new link sync:\n", "info")
+    #logger.info("Runinng new link sync:\n")
     cm = Connection_Manager()
 
     # Open connection to postgres db
@@ -149,7 +164,8 @@ def new_link_sync():
             json={"access_token": f"{access_token}"},
         )
         res = res.json()
-        logger.debug(f"\tGot response from pave-agent: {res}")
+        log_this(f"\tGot response from pave-agent: {res}", "debug")
+        #logger.debug(f"\tGot response from pave-agent: {res}")
 
         # Give pave agent some time to process transactions
         time.sleep(2)
@@ -174,15 +190,18 @@ def new_link_sync():
         )
 
         if response.status_code != 200:
-            logger.exception("Non 200 return code on transactions")
-            logger.exception(response.json())
+            log_this("Non 200 return code on transactions", "exception")
+            log_this(f"{response.json()}", "exception")
+            #logger.exception("Non 200 return code on transactions")
+            #logger.exception(response.json())
         else:
             mongo_timer = datetime.datetime.now()
             mongo_collection = mongo_db["transactions"]
             transactions = response.json()["transactions"]
 
             if len(transactions) > 0:
-                logger.info(f"\tInserting {json.dumps(transactions)[:200]}... into transactions")
+                log_this(f"\tInserting {json.dumps(transactions)[:200]}... into transactions", "info")
+                #logger.info(f"\tInserting {json.dumps(transactions)[:200]}... into transactions")
 
                 try:
                     mongo_collection.update_one(
@@ -193,13 +212,17 @@ def new_link_sync():
                         }
                     )
                 except Exception as e:
-                    logger.error(f"COULD NOT UPDATE TRANSACTIONS FOR USER {user_id} ON LINK SYNC")
-                    logger.error(e)
+                    log_this(f"COULD NOT UPDATE TRANSACTIONS FOR USER {user_id} ON LINK SYNC", "error")
+                    log_this(f"{e}", "error")
+                    #logger.error(f"COULD NOT UPDATE TRANSACTIONS FOR USER {user_id} ON LINK SYNC")
+                    #logger.error(e)
 
                 mongo_timer_end = datetime.datetime.now()
-                logger.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
+                log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
+                #logger.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
             else:
-                logger.warning("\tGot to new link transaction db insertion but no transactions were found for the date range")
+                log_this("\tGot to new link transaction db insertion but no transactions were found for the date range", "warning")
+                #logger.warning("\tGot to new link transaction db insertion but no transactions were found for the date range")
 
             transactions = response.json()["transactions"]
             transaction_date_str = transactions[len(transactions)-1]["date"]
@@ -217,8 +240,10 @@ def new_link_sync():
         )
 
         if response.status_code != 200:
-            logger.exception("Non 200 return code on transactions")
-            logger.exception(response.json())
+            log_this("Non 200 return code on transactions", "exception")
+            log_this(f"{response.json()}", "exception")
+            #logger.exception("Non 200 return code on transactions")
+            #logger.exception(response.json())
         else:
             mongo_timer = datetime.datetime.now()
             mongo_collection = mongo_db["balances"]
@@ -226,7 +251,8 @@ def new_link_sync():
 
 
             if len(balances) > 0:
-                logger.info(f"\tInserting {json.dumps(balances)[:200]} into balances")
+                log_this(f"\tInserting {json.dumps(balances)[:200]} into balances", "info")
+                #logger.info(f"\tInserting {json.dumps(balances)[:200]} into balances")
 
                 try:
                     mongo_collection.update_one(
@@ -240,13 +266,17 @@ def new_link_sync():
                         bypass_document_validation = True
                     )
                 except Exception as e:
-                    logger.error(f"COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC")
-                    logger.error(e)
+                    log_this(f"COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC", "error")
+                    log_this(f"{e}")
+                    #logger.error(f"COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC")
+                    #logger.error(e)
 
                 mongo_timer_end = datetime.datetime.now()
-                logger.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
+                log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
+                #logger.info(f"\tDB insertion took: {mongo_timer_end-mongo_timer}")
             else:
-                logger.warning("\tGot to new link balance db insertion but no transactions were found for the date range")
+                log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "warning")
+                #logger.warning("\tGot to new link balance db insertion but no transactions were found for the date range")
             #####################################################################
 
 ##################################################################################################################################################################################################
