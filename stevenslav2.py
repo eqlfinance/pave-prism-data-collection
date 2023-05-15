@@ -516,26 +516,33 @@ def daily_sync():
             continue
 
         rows = conn.execute(
-            f"SELECT * FROM public.plaid_accounts WHERE plaid_accounts.link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')}"
+            f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY end_date DESC"
         ).fetchall()
 
-        accounts = [{
-            "account_id": str(row["plaid_id"]),
-            "balances": {
-                "available": decrypt(row["balances_available"]),
-                "current": decrypt(row["balances_current"]),
-                "iso_currency_code": decrypt(row["balances_iso_currency_code"]),
-                "limit": decrypt(row["balances_limit"]),
-                "unofficial_currency_code": decrypt(row["balances_unofficial_currency_code"])
-            },
-            "mask": decrypt(row["mask"]),
-            "name": decrypt(row["name"]),
-            "official_name": decrypt(row["official_name"]),
-            "type": row["type"],
-            "subtype": row["subtype"]
-        }
-        for row in rows
-        ]
+        accounts = []
+        for row in rows:
+            row = row._asdict()['data']
+            for item in row:
+                _accounts = item["accounts"]
+                for account in _accounts:
+
+                    log_this(f"Hello: {account}", "error")
+
+                    accounts.append({
+                        "account_id": str(account["account_id"]),
+                        "balances": {
+                            "available": account["balances"]["available"],
+                            "current": account["balances"]["current"],
+                            "iso_currency_code": account["balances"]["iso_currency_code"],
+                            "limit": account["balances"]["limit"],
+                            "unofficial_currency_code": account["balances"]["unofficial_currency_code"]
+                        },
+                        "mask": account["mask"],
+                        "name": account["name"],
+                        "official_name": account["official_name"],
+                        "type": account["type"],
+                        "subtype": account["subtype"]
+                    })
 
         response = handle_pave_request(
             user_id=user_id,
@@ -759,7 +766,7 @@ if __name__ == "__main__":
         else:
             raise Exception("You must provide either user, link, hourly, daily, or weekly")
     except Exception as e:
-        log_this(f"{e}", "info")
+        logger.exception(e)
 
     cm.close_pymongo_connection()
     cm.close_postgres_connection(conn)
