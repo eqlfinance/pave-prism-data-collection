@@ -198,12 +198,13 @@ def new_link_sync():
 
                 mongo_timer_end = datetime.datetime.now()
                 log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
+                
+                transactions = response.json()["transactions"]
+                transaction_date_str = transactions[len(transactions)-1]["date"]
+                params["start_date"] = transaction_date_str
             else:
                 log_this("\tGot to new link transaction db insertion but no transactions were found for the date range", "warning")
 
-            transactions = response.json()["transactions"]
-            transaction_date_str = transactions[len(transactions)-1]["date"]
-            params["start_date"] = transaction_date_str
         #####################################################################
 
         # Store the transaction data from pave
