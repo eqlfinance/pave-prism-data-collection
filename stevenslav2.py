@@ -20,7 +20,7 @@ from google.cloud import secretmanager
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-pave_table = "pave-stage"
+pave_table = "pave-test"
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
@@ -516,7 +516,7 @@ def daily_sync():
             continue
 
         rows = conn.execute(
-            f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY end_date DESC"
+            f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY end_date DESC LIMIT 1"
         ).fetchall()
 
         accounts = []
@@ -527,22 +527,22 @@ def daily_sync():
                 for account in _accounts:
 
                     log_this(f"Hello: {account}", "error")
-
-                    accounts.append({
-                        "account_id": str(account["account_id"]),
-                        "balances": {
-                            "available": account["balances"]["available"],
-                            "current": account["balances"]["current"],
-                            "iso_currency_code": account["balances"]["iso_currency_code"],
-                            "limit": account["balances"]["limit"],
-                            "unofficial_currency_code": account["balances"]["unofficial_currency_code"]
-                        },
-                        "mask": account["mask"],
-                        "name": account["name"],
-                        "official_name": account["official_name"],
-                        "type": account["type"],
-                        "subtype": account["subtype"]
-                    })
+                    if account["account_id"] not in [x["account_id"] for x in accounts]:
+                        accounts.append({
+                            "account_id": str(account["account_id"]),
+                            "balances": {
+                                "available": account["balances"]["available"],
+                                "current": account["balances"]["current"],
+                                "iso_currency_code": account["balances"]["iso_currency_code"],
+                                "limit": account["balances"]["limit"],
+                                "unofficial_currency_code": account["balances"]["unofficial_currency_code"]
+                            },
+                            "mask": account["mask"],
+                            "name": account["name"],
+                            "official_name": account["official_name"],
+                            "type": account["type"],
+                            "subtype": account["subtype"]
+                        })
 
         response = handle_pave_request(
             user_id=user_id,
