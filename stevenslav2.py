@@ -263,8 +263,9 @@ def new_user_sync():
     log_this("Runinng new user sync:\n", "info")
     cm = Connection_Manager()
 
-    # Open connection to postgres db
+    # Open connection to postgres db and mongodb
     conn = cm.get_postgres_connection()
+    mongo_db = cm.get_pymongo_table(pave_table)
 
     rows = conn.execute(
         #"SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
@@ -277,7 +278,12 @@ def new_user_sync():
             if line.lstrip().rstrip() != "":
                 seen_user_ids.append(line)
 
+    # Ensure that we only get user_ids that we haven't processed before
+    # because this is an expensive sync
+    pave_user_ids = [x["user_id"] for x in list(mongo_db["balances"].find({}))]
+    seen_user_ids.extend(pave_user_ids)
     user_ids = [str(row[0]) for row in rows if str(row[0]) not in seen_user_ids]
+
     start = datetime.datetime.now()
     # Get all user access tokens and upload transaction/balance them using the pave agent
     for user_id in tqdm(user_ids):
@@ -305,10 +311,6 @@ def new_user_sync():
         ).strftime("%Y-%m-%d")
         end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
         params = {"start_date": start_date_str, "end_date": end_date_str}
-
-        # Get all transactions and upload them to mongodb
-        mongo_db = cm.get_pymongo_table(pave_table)
-
 
         # Store the transaction data from pave
         response = handle_pave_request(
