@@ -9,6 +9,7 @@ import requests
 import sys
 import base64
 import sys
+import uuid
 
 from tqdm import tqdm
 from cryptography.fernet import Fernet, MultiFernet
@@ -20,7 +21,7 @@ from google.cloud import secretmanager
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-pave_table = "pave"
+pave_table = "Pave-Production"
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
@@ -105,7 +106,7 @@ def insert_response_into_db(
 
     if res_code == 200:
         try:
-            mongo_collection.replace_one(
+            res = mongo_collection.replace_one(
                 {"user_id": user_id},
                 {
                     response_column_name: res.json(),
@@ -115,6 +116,10 @@ def insert_response_into_db(
                 },
                 upsert=True
             )
+
+            log_this(f"        {res.matched_count=} {res.modified_count=} {res.upserted_id=}")
+            if res.matched_count == 0 and res.modified_count == 0 and res.upserted_id == None:
+                log_this("        Imposible case!!!!")
         except Exception as e:
             log_this(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}", "error")
             log_this(f"{e}", "error")
@@ -262,8 +267,8 @@ def new_user_sync():
     conn = cm.get_postgres_connection()
 
     rows = conn.execute(
-        "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
-        #"SELECT DISTINCT id FROM public.users"
+        #"SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
+        "SELECT DISTINCT id FROM public.users"
     ).fetchall()
 
     user_ids = [str(row[0]) for row in rows]
@@ -379,22 +384,22 @@ def new_user_sync():
         #####################################################################
 
         # Store the attribute data from pave
-        params = {"date": end_date_str}
-        response = handle_pave_request(
-            user_id=user_id,
-            method="get",
-            endpoint=f"{pave_base_url}/{user_id}/attributes",
-            payload=None,
-            headers=pave_headers,
-            params=params,
-        )
-        insert_response_into_db(
-            user_id=user_id,
-            res=response,
-            mongo_db=mongo_db,
-            collection_name="attributes",
-            response_column_name="attributes",
-        )
+        # params = {"date": end_date_str}
+        # response = handle_pave_request(
+        #     user_id=user_id,
+        #     method="get",
+        #     endpoint=f"{pave_base_url}/{user_id}/attributes",
+        #     payload=None,
+        #     headers=pave_headers,
+        #     params=params,
+        # )
+        # insert_response_into_db(
+        #     user_id=user_id,
+        #     res=response,
+        #     mongo_db=mongo_db,
+        #     collection_name="attributes",
+        #     response_column_name="attributes",
+        # )
         #####################################################################
 
 
@@ -526,7 +531,6 @@ def daily_sync():
                 _accounts = item["accounts"]
                 for account in _accounts:
 
-                    log_this(f"Hello: {account}", "error")
                     if account["account_id"] not in [x["account_id"] for x in accounts]:
                         accounts.append({
                             "account_id": str(account["account_id"]),
@@ -708,7 +712,8 @@ conn = cm.get_postgres_connection()
 logger = logging.getLogger("stevenslav2")
 logger.setLevel(logging.DEBUG)
 
-formatter = logging.Formatter('[%(levelname)s] %(name)-10s @ %(asctime)s: %(message)s')
+proc_id = uuid.uuid4()
+formatter = logging.Formatter(f'{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s', datefmt='%m-%d %H:%M:%S')
 
 normal_log_handler = RotatingFileHandler('/home/langston/pave-prism/stevenslav2.log', 'a', 1000**3, 2)
 normal_log_handler.setFormatter(formatter)
