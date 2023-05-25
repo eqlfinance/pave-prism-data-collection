@@ -198,12 +198,12 @@ def new_link_sync():
 
                 mongo_timer_end = datetime.datetime.now()
                 log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
+
+                transaction_date_str = transactions[len(transactions)-1]["date"]
+                params["start_date"] = transaction_date_str
             else:
                 log_this("\tGot to new link transaction db insertion but no transactions were found for the date range", "warning")
 
-            transactions = response.json()["transactions"]
-            transaction_date_str = transactions[len(transactions)-1]["date"]
-            params["start_date"] = transaction_date_str
         #####################################################################
 
         # Store the transaction data from pave
@@ -516,7 +516,7 @@ def daily_sync():
             continue
 
         rows = conn.execute(
-            f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY end_date DESC"
+            f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY end_date DESC LIMIT 1"
         ).fetchall()
 
         accounts = []
@@ -527,22 +527,22 @@ def daily_sync():
                 for account in _accounts:
 
                     log_this(f"Hello: {account}", "error")
-
-                    accounts.append({
-                        "account_id": str(account["account_id"]),
-                        "balances": {
-                            "available": account["balances"]["available"],
-                            "current": account["balances"]["current"],
-                            "iso_currency_code": account["balances"]["iso_currency_code"],
-                            "limit": account["balances"]["limit"],
-                            "unofficial_currency_code": account["balances"]["unofficial_currency_code"]
-                        },
-                        "mask": account["mask"],
-                        "name": account["name"],
-                        "official_name": account["official_name"],
-                        "type": account["type"],
-                        "subtype": account["subtype"]
-                    })
+                    if account["account_id"] not in [x["account_id"] for x in accounts]:
+                        accounts.append({
+                            "account_id": str(account["account_id"]),
+                            "balances": {
+                                "available": account["balances"]["available"],
+                                "current": account["balances"]["current"],
+                                "iso_currency_code": account["balances"]["iso_currency_code"],
+                                "limit": account["balances"]["limit"],
+                                "unofficial_currency_code": account["balances"]["unofficial_currency_code"]
+                            },
+                            "mask": account["mask"],
+                            "name": account["name"],
+                            "official_name": account["official_name"],
+                            "type": account["type"],
+                            "subtype": account["subtype"]
+                        })
 
         response = handle_pave_request(
             user_id=user_id,
