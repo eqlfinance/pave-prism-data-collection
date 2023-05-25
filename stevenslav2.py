@@ -271,8 +271,14 @@ def new_user_sync():
         "SELECT DISTINCT id FROM public.users"
     ).fetchall()
 
-    user_ids = [str(row[0]) for row in rows]
+    seen_user_ids = []
+    with open('seen_user_ids.txt', 'r') as file:
+        for line in file:
+            if line.lstrip().rstrip() != "":
+                seen_user_ids.append(line)
 
+    user_ids = [str(row[0]) for row in rows if str(row[0]) not in seen_user_ids]
+    start = datetime.datetime.now()
     # Get all user access tokens and upload transaction/balance them using the pave agent
     for user_id in tqdm(user_ids):
         rows = conn.execute(
@@ -401,6 +407,16 @@ def new_user_sync():
         #     response_column_name="attributes",
         # )
         #####################################################################
+
+        with open('seen_user_ids.txt', 'a') as file:
+            file.write(f"{user_id}\n")
+        finish = datetime.datetime.now()
+
+        # If this has taken 4 hours it probably got stuck somewhere
+        if finish - start > datetime.timedelta(hours=4):
+            return False
+
+    return True
 
 
 ##################################################################################################################################################################################################
@@ -735,7 +751,9 @@ if __name__ == "__main__":
             logger.addHandler(handler)
 
             log_this(f"Process start: {process_start}", "info")
-            new_user_sync()
+            while not new_user_sync():
+                time.sleep(120) # Give everything time to cool off
+                log_this("        Starting another cycle \n\n")
         elif which == "link":
             handler = RotatingFileHandler('/home/langston/pave-prism/logs/new-link-data-sync.log', 'a', (1000**2)*200, 2)
             handler.setFormatter(formatter)
