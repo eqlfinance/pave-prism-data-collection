@@ -69,7 +69,7 @@ def handle_pave_request(
     last_wait: float = 0,
 ) -> requests.Response:
 
-    log_this(f"Making pave request to {endpoint}", "info")
+    #log_this(f"Making pave request to {endpoint}", "info")
     request_timer = datetime.datetime.now()
 
     if method == "get":
@@ -80,19 +80,19 @@ def handle_pave_request(
         raise ValueError("Method not understood {}".format(method))
 
     res_code = res.status_code
-    res_json = json.dumps(res.json())
-    log_this(f"\tResponse: {res_code} -> {res_json[:100]} ... {res_json[-100:]}", "info")
+    res_json_string = json.dumps(res.json())
 
     if res_code == 429:
         sleep = 1 if last_wait == 0 else last_wait * 2
-        log_this(f"\tRequest limit reached, waiting {sleep} second(s)", "error")
+        log_this(f"Request limit reached, waiting {sleep} second(s)", "error")
         time.sleep(sleep)
         return handle_pave_request(
             user_id, method, endpoint, payload, headers, params, sleep
         )
     else:
         request_timer_end = datetime.datetime.now()
-        log_this(f"Pave request to {endpoint} took: {request_timer_end-request_timer}\n", "info")
+        log_this(f"{method.upper()} {endpoint} took: {request_timer_end-request_timer}", "info")
+        log_this(f"        Response: {res_code} -> {res_json_string[:100]}{f'... {res_json_string[-100:]}' if len(res_json_string) > 100 else ''}\n", "info")
 
         return res
 
@@ -141,23 +141,30 @@ def new_link_sync():
     conn = cm.get_postgres_connection()
 
     rows = conn.execute(
-        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
+        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '12 days')"
     ).fetchall()
+
+    seen_access_tokens = []
+    with open('seen_access_tokens.txt', 'r') as file:
+        for line in file:
+            if line.strip() != "":
+                seen_access_tokens.append(line.strip())
 
     for row in tqdm(rows):
         row = row._asdict()
         access_token, user_id = decrypt(row["access_token"]), str(row["user_id"])
         time_in_days = 365 * 2
 
+        log_this(f"{user_id=}")
+        pave_agent_start = datetime.datetime.now()
         res = requests.post(
             f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={time_in_days}",
             json={"access_token": f"{access_token}"},
         )
-        res = res.json()
-        log_this(f"\tGot response from pave-agent: {res}", "debug")
-
         # Give pave agent some time to process transactions
         time.sleep(2)
+        pave_agent_end = datetime.datetime.now()
+        log_this(f"  Pave Agent res code: {res.status_code}, took {pave_agent_end-pave_agent_start}", "debug")
 
         # Date ranges for pave
         start_date_str = (
@@ -179,15 +186,14 @@ def new_link_sync():
         )
 
         if response.status_code != 200:
-            log_this("Non 200 return code on transactions", "exception")
-            log_this(f"{response.json()}", "exception")
+            log_this("        Non 200 return code on transactions", "exception")
         else:
             mongo_timer = datetime.datetime.now()
             mongo_collection = mongo_db["transactions"]
             transactions = response.json()["transactions"]
 
             if len(transactions) > 0:
-                log_this(f"\tInserting {json.dumps(transactions)[:200]}... into transactions", "info")
+                log_this(f"   Inserting {json.dumps(transactions)[:200]}... into transactions", "info")
 
                 try:
                     mongo_collection.update_one(
@@ -198,11 +204,11 @@ def new_link_sync():
                         }
                     )
                 except Exception as e:
-                    log_this(f"COULD NOT UPDATE TRANSACTIONS FOR USER {user_id} ON LINK SYNC", "error")
-                    log_this(f"{e}", "error")
+                    log_this(f"        COULD NOT UPDATE TRANSACTIONS FOR USER {user_id} ON LINK SYNC", "error")
+                    log_this(f"        {e}", "error")
 
                 mongo_timer_end = datetime.datetime.now()
-                log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
+                log_this(f"      Transaction insertion took: {mongo_timer_end-mongo_timer}", "info")
 
                 transaction_date_str = transactions[len(transactions)-1]["date"]
                 params["start_date"] = transaction_date_str
@@ -222,8 +228,7 @@ def new_link_sync():
         )
 
         if response.status_code != 200:
-            log_this("Non 200 return code on transactions", "exception")
-            log_this(f"{response.json()}", "exception")
+            log_this("    Non 200 return code on balances", "exception")
         else:
             mongo_timer = datetime.datetime.now()
             mongo_collection = mongo_db["balances"]
@@ -231,7 +236,7 @@ def new_link_sync():
 
 
             if len(balances) > 0:
-                log_this(f"\tInserting {json.dumps(balances)[:200]} into balances", "info")
+                log_this(f"    Inserting {json.dumps(balances)[:200]} into balances", "info")
 
                 try:
                     mongo_collection.update_one(
@@ -245,13 +250,11 @@ def new_link_sync():
                         bypass_document_validation = True
                     )
                 except Exception as e:
-                    log_this(f"COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC", "error")
-                    log_this(f"{e}")
+                    log_this(f"    COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC", "error")
+                    log_this(f"    {e}", "error")
 
                 mongo_timer_end = datetime.datetime.now()
-                log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
-            else:
-                log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "warning")
+                log_this(f"    Balance insertion took: {mongo_timer_end-mongo_timer}", "info")
             #####################################################################
 
 ##################################################################################################################################################################################################
@@ -275,9 +278,8 @@ def new_user_sync():
     seen_user_ids = []
     with open('seen_user_ids.txt', 'r') as file:
         for line in file:
-            if line.lstrip().rstrip() != "":
-                print("Seen user id", line.rstrip().lstrip())
-                seen_user_ids.append(line.rstrip().lstrip())
+            if line.strip() != "":
+                seen_user_ids.append(line.strip())
 
     # Ensure that we only get user_ids that we haven't processed before
     # because this is an expensive sync
@@ -290,7 +292,7 @@ def new_user_sync():
     for user_id in tqdm(user_ids):
         if user_id in seen_user_ids:
             continue
-        
+
         loop_start = datetime.datetime.now()
         rows = conn.execute(
             f"SELECT DISTINCT access_token FROM public.plaid_links WHERE user_id = '{user_id}'"
@@ -373,7 +375,7 @@ def new_user_sync():
         )
 
         if response.status_code == 200:
-            ui_start = datetime.datetime.now() 
+            ui_start = datetime.datetime.now()
             for title, obj in response.json().items():
                 log_this("\tInserting response into: {}".format(title), "info")
                 mongo_collection = mongo_db[title]
@@ -422,7 +424,7 @@ def new_user_sync():
             file.write(f"{user_id}\n")
         finish = datetime.datetime.now()
 
-        log_this(f"    > Loop time took {finish-loop_start}")    
+        log_this(f"    > Loop time took {finish-loop_start}")
         # If this has taken 4 hours it probably got stuck somewhere
         if finish - start > datetime.timedelta(hours=4):
             return False
