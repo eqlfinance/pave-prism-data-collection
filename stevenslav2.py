@@ -276,17 +276,22 @@ def new_user_sync():
     with open('seen_user_ids.txt', 'r') as file:
         for line in file:
             if line.lstrip().rstrip() != "":
-                seen_user_ids.append(line)
+                print("Seen user id", line.rstrip().lstrip())
+                seen_user_ids.append(line.rstrip().lstrip())
 
     # Ensure that we only get user_ids that we haven't processed before
     # because this is an expensive sync
     pave_user_ids = [x["user_id"] for x in list(mongo_db["balances"].find({}))]
     seen_user_ids.extend(pave_user_ids)
-    user_ids = [str(row[0]) for row in rows if str(row[0]) not in seen_user_ids]
+    user_ids = [str(row[0]) for row in rows]
 
     start = datetime.datetime.now()
     # Get all user access tokens and upload transaction/balance them using the pave agent
     for user_id in tqdm(user_ids):
+        if user_id in seen_user_ids:
+            continue
+        
+        loop_start = datetime.datetime.now()
         rows = conn.execute(
             f"SELECT DISTINCT access_token FROM public.plaid_links WHERE user_id = '{user_id}'"
         ).fetchall()
@@ -300,7 +305,7 @@ def new_user_sync():
                 json={"access_token": f"{access_token}"},
             )
             res = res.json()
-            log_this(f"\tGot response from pave-agent: {res}", "debug")
+            #log_this(f"\tGot response from pave-agent: {res}", "debug")
 
             # Give pave agent some time to process transactions
             time.sleep(2)
@@ -368,7 +373,8 @@ def new_user_sync():
         )
 
         if response.status_code == 200:
-            for title, object in response.json().items():
+            ui_start = datetime.datetime.now() 
+            for title, obj in response.json().items():
                 log_this("\tInserting response into: {}".format(title), "info")
                 mongo_collection = mongo_db[title]
 
@@ -376,7 +382,7 @@ def new_user_sync():
                     mongo_collection.replace_one(
                         {"user_id": user_id},
                         {
-                            title: object,
+                            title: obj,
                             "user_id": user_id,
                             "response_code": response.status_code,
                             "date": datetime.datetime.now(),
@@ -386,6 +392,8 @@ def new_user_sync():
                 except Exception as e:
                     log_this(f"COULD NOT INSERT {title} FOR USER {user_id} ON NEW USER SYNC", "error")
                     log_this(f"{e}", "error")
+            ui_end = datetime.datetime.now()
+            log_this(f" Unified insights entry took {ui_end-ui_start}")
 
         else:
             log_this("\tCan't insert: {} {}\n".format(response.status_code, response.json()), "warning")
@@ -414,6 +422,7 @@ def new_user_sync():
             file.write(f"{user_id}\n")
         finish = datetime.datetime.now()
 
+        log_this(f"    > Loop time took {finish-loop_start}")    
         # If this has taken 4 hours it probably got stuck somewhere
         if finish - start > datetime.timedelta(hours=4):
             return False
@@ -730,7 +739,7 @@ conn = cm.get_postgres_connection()
 logger = logging.getLogger("stevenslav2")
 logger.setLevel(logging.DEBUG)
 
-proc_id = uuid.uuid4()
+proc_id = str(uuid.uuid4())[:8]
 formatter = logging.Formatter(f'{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s', datefmt='%m-%d %H:%M:%S')
 
 normal_log_handler = RotatingFileHandler('/home/langston/pave-prism/stevenslav2.log', 'a', 1000**3, 2)
