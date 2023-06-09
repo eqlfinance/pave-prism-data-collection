@@ -141,14 +141,8 @@ def new_link_sync():
     conn = cm.get_postgres_connection()
 
     rows = conn.execute(
-        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '12 days')"
+        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
     ).fetchall()
-
-    seen_access_tokens = []
-    with open('seen_access_tokens.txt', 'r') as file:
-        for line in file:
-            if line.strip() != "":
-                seen_access_tokens.append(line.strip())
 
     for row in tqdm(rows):
         row = row._asdict()
@@ -271,28 +265,17 @@ def new_user_sync():
     mongo_db = cm.get_pymongo_table(pave_table)
 
     rows = conn.execute(
-        #"SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
-        "SELECT DISTINCT id FROM public.users"
+        "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '35 minutes')"
     ).fetchall()
-
-    seen_user_ids = []
-    with open('seen_user_ids.txt', 'r') as file:
-        for line in file:
-            if line.strip() != "":
-                seen_user_ids.append(line.strip())
 
     # Ensure that we only get user_ids that we haven't processed before
     # because this is an expensive sync
     pave_user_ids = [x["user_id"] for x in list(mongo_db["balances"].find({}))]
-    seen_user_ids.extend(pave_user_ids)
-    user_ids = [str(row[0]) for row in rows]
+    user_ids = [str(row[0]) for row in rows if str(row[0]) not in pave_user_ids]
 
     start = datetime.datetime.now()
     # Get all user access tokens and upload transaction/balance them using the pave agent
     for user_id in tqdm(user_ids):
-        if user_id in seen_user_ids:
-            continue
-
         loop_start = datetime.datetime.now()
         rows = conn.execute(
             f"SELECT DISTINCT access_token FROM public.plaid_links WHERE user_id = '{user_id}'"
