@@ -1,4 +1,3 @@
-from tqdm import tqdm
 from utils import *
 
 handler = RotatingFileHandler('/home/langston/pave-prism/logs/daily-balance-data-sync.log', 'a+', (1000**2)*200, 2)
@@ -8,7 +7,7 @@ logger.addHandler(handler)
 
 process_start = datetime.datetime.now()
 
-log_this("\n\nRuninng Balance Sync:\n", "error")
+log_this("\n\nRuninng Balance Sync:\n", "info")
 log_this(f"Process start: {process_start}", "info")
 
 conn = get_backend_connection()
@@ -93,14 +92,19 @@ for user_id in tqdm(user_ids):
 
             if len(balances) > 0:
                 try:
-                    print(f"{balances=}")
                     for balance_obj in balances:
                         log_this(f"\tInserting {json.dumps(balance_obj['balances'])} into balances", "info")
+                        # Add each balance object that isn't already listed in the account @ balance_obj["account_id"]
                         mongo_collection.update_one(
                             {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance_obj["account_id"]}}},
-                            {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance_obj["balances"]}}}
+                            {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance_obj["balances"]}},
+                             "$set":{"balances.accounts_balances.$.days_negative": balance_obj["days_negative"],
+                                "balances.accounts_balances.$.days_single_digit": balance_obj["days_single_digit"],
+                                "balances.accounts_balances.$.days_double_digit": balance_obj["days_double_digit"],
+                                "balances.accounts_balances.$.median_balance": balance_obj["median_balance"]}}
                         )
 
+                    # Update the end date to today
                     mongo_collection.update_one(
                         {"user_id": str(user_id)},
                         {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}},

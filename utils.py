@@ -8,6 +8,7 @@ import uuid
 import pymongo
 import requests
 import sqlalchemy
+from tqdm import tqdm
 from logging.handlers import RotatingFileHandler
 from cryptography.fernet import Fernet, MultiFernet
 

@@ -1,4 +1,3 @@
-from tqdm import tqdm
 from utils import *
 
 handler = RotatingFileHandler('/home/langston/pave-prism/logs/new-user-data-sync.log', 'a+', (1000**2)*200, 2)
