@@ -10,7 +10,7 @@ process_start = datetime.datetime.now()
 log_this("\n\nRuninng new link sync:\n", "info")
 log_this(f"Process start: {process_start}", "info")
 
-# Open connection to postgres db
+# Open connections
 conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
 
