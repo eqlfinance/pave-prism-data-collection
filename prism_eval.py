@@ -122,6 +122,7 @@ def aggregate2(
                     )
 
             for account_data in newest_account_dict.values():
+                assert account_data["account"]["account_id"] not in [a["account_id"] for a in cashflow_data["accounts"]], f"Found a duplicate account: {account_data=}, {cashflow_data=}"
                 cashflow_data["accounts"].append(account_data["account"])
 
     return cashflow_data
@@ -211,7 +212,6 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
 
     try:
         # Store the responses into MongoDB if there wasn't an error
-        
         cashscore = response["products"]["cashscore"]["result"]
         insights = response["products"]["insights"]["result"]
         categories = response["products"]["categories"]["result"]
