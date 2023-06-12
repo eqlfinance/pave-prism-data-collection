@@ -45,7 +45,7 @@ logger.setLevel(logging.DEBUG)
 proc_id = str(uuid.uuid4())[:8]
 formatter = logging.Formatter(f'{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s', datefmt='%m-%d %H:%M:%S')
 
-normal_log_handler = RotatingFileHandler('/home/langston/pave-prism/stevenslav2.log', 'a', 1000**3, 2)
+normal_log_handler = RotatingFileHandler('/home/langston/pave-prism/stevenslav2.log', 'a+', 1000**3, 2)
 normal_log_handler.setFormatter(formatter)
 normal_log_handler.setLevel(logging.DEBUG)
 logger.addHandler(normal_log_handler)

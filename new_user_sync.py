@@ -1,32 +1,27 @@
-import requests
-
 from tqdm import tqdm
 from utils import *
 
-handler = RotatingFileHandler('/home/langston/pave-prism/logs/new-user-data-sync.log', 'a', (1000**2)*200, 2)
+handler = RotatingFileHandler('/home/langston/pave-prism/logs/new-user-data-sync.log', 'a+', (1000**2)*200, 2)
 handler.setFormatter(formatter)
 handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 
 process_start = datetime.datetime.now()
 
-log_this("Runinng new user sync:\n", "info")
-log_this(f"\nProcess start: {process_start}", "info")
+log_this("\n\nRuninng new user sync:\n", "info")
+log_this(f"Process start: {process_start}", "info")
 
 conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
 
 rows = conn.execute(
-    "SELECT DISTINCT id FROM public.users"
+    "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '10 hours')"
 ).fetchall()
 
 # Ensure that we only get user_ids that we haven't processed before
 # because this is an expensive sync
 pave_user_ids = [x["user_id"] for x in list(mongo_db["balances"].find({}))]
 user_ids = [str(row[0]) for row in rows if str(row[0]) not in pave_user_ids]
-
-print(f"{len(pave_user_ids)=}, {len(user_ids)=}")
-exit(0)
 
 start = datetime.datetime.now()
 # Get all user access tokens and upload transaction/balance them using the pave agent
@@ -160,3 +155,6 @@ for user_id in tqdm(user_ids):
     # If this has taken 4 hours it probably got stuck somewhere
     if finish - start > datetime.timedelta(hours=4):
         break
+
+close_backend_connection()
+close_pymongo_connection()
