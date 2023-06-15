@@ -196,7 +196,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
     }
 
     endpoint = (
-        prism_host + "/v2/evaluation?cashscore=1&insights=1&categories=1&income=1"
+        prism_host + "/v2/evaluation?cashscore=1&insights=1&income=1"
     )
     res = requests.post(endpoint, data=json.dumps(payload), headers=headers)
     response = convert_nans(res.json())
