@@ -14,7 +14,7 @@ conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
 
 rows = conn.execute(
-    "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '10 hours')"
+    "SELECT DISTINCT id FROM public.users WHERE created_at >= (NOW() - INTERVAL '30 minutes')"
 ).fetchall()
 
 # Ensure that we only get user_ids that we haven't processed before

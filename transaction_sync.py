@@ -15,7 +15,7 @@ conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
 
 rows = conn.execute(
-    "SELECT * FROM public.plaid_transactions WHERE plaid_transactions.date >= (NOW() - INTERVAL '10 hours')"
+    "SELECT * FROM public.plaid_transactions WHERE plaid_transactions.date >= (NOW() - INTERVAL '1 hours')"
 ).fetchall()
 
 for row in tqdm(rows):

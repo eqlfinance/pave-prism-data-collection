@@ -70,7 +70,7 @@ for user_id in tqdm(user_ids):
     if response.status_code == 200:
         # Date ranges for pave
         start_date_str = (
-            datetime.datetime.now() - datetime.timedelta(days=5)
+            datetime.datetime.now() - datetime.timedelta(days=1)
         ).strftime("%Y-%m-%d")
         end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
         params = {"start_date": start_date_str, "end_date": end_date_str}

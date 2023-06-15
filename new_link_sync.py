@@ -15,7 +15,7 @@ conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
 
 rows = conn.execute(
-    "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '10 hours')"
+    "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes') OR last_validated_at >= (NOW() - INTERVAL '30 minutes')"
 ).fetchall()
 
 for row in tqdm(rows):
