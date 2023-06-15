@@ -72,9 +72,10 @@ def aggregate2(
         for item in row[1]:
             for account in item["accounts"]:
                 if (
-                    account["account_id"] not in newest_account_dict.keys()
+                    (account["account_id"] not in newest_account_dict.keys()
                     or account["account_id"] in newest_account_dict.keys()
-                    and newest_account_dict[account["account_id"]]["date"] < row[0]
+                    and newest_account_dict[account["account_id"]]["date"] < row[0])
+                    and account["subtype"] in ['SAVINGS', 'CHECKING', 'HSA', 'CD', 'MONEY MARKET', 'PAYPAL', 'PREPAID', 'CASH MANAGEMENT', 'EBT', '529', '401A', '401K', '403B', '457B', 'BROKERAGE', 'EDUCATION SAVINGS ACCOUNT', 'FIXED ANNUITY', 'HEALTH REIMBURSEMENT ARRANGEMENT', 'IRA', 'KEOGH', 'LIFE INSURANCE', 'MUTUAL FUND', 'NON-TAXABLE BROKERAGE ACCOUNT', 'OTHER ANNUITY', 'OTHER INSURANCE', 'PENSION', 'PROFIT SHARING PLAN', 'QSHR', 'RETIREMENT', 'ROTH', 'ROTH 401K', 'SARSEP', 'SEP IRA', 'SIMPLE IRA', 'STOCK PLAN', 'TRUST', 'UGMA', 'UTMA', 'VARIABLE ANNUITY', 'THRIFT SAVINGS PLAN', 'OTHER']
                 ):
                     newest_account_dict[account["account_id"]] = {"date": row[0]}
 
@@ -199,7 +200,7 @@ def calculate_new_cashscore(user_id: str, conn: sqlalchemy.engine.Connection):
     )
     res = requests.post(endpoint, data=json.dumps(payload), headers=headers)
     response = convert_nans(res.json())
-    logging.debug(f"Adding response: {json.dumps(response)[:100]}")
+    logging.debug(f"Adding response: {json.dumps(response)[:500]}")
 
     mongo_db.responses.insert_one(
         {
