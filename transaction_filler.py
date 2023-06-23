@@ -8,7 +8,7 @@ rows = conn.execute(
 
 timer = 0
 iter_counter = 0
-for i in tqdm(len(rows)):
+for i in tqdm(range(len(rows))):
     row = rows[i]._asdict()
     access_token, user_id = decrypt(row["access_token"]), str(row["user_id"])
     time_in_days = 365 * 4
