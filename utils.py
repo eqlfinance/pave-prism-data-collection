@@ -119,7 +119,7 @@ def close_backend_connection():
 def log_this(message:str, severity:str = "debug"):
     global logger
     logger.log(logging._nameToLevel[severity.upper()], message)
-    subprocess.run(["gcloud", "logging", "write", "stevenslav", message, f"--severity={severity.upper()}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
+    #subprocess.run(["gcloud", "logging", "write", "stevenslav", message, f"--severity={severity.upper()}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
 
 def base64_decode(val: str) -> bytes:
     return base64.urlsafe_b64decode(val.encode("ascii"))

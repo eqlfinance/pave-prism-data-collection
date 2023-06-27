@@ -23,7 +23,6 @@ def run_on_user(access_token, user_id):
     access_token = decrypt(access_token)
     time_in_days = 365 * 3
 
-    log_this(f"{user_id=}")
     pave_agent_start = datetime.datetime.now()
     res = requests.post(
         f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={time_in_days}",
@@ -32,7 +31,7 @@ def run_on_user(access_token, user_id):
     # Give pave agent some time to process transactions
     time.sleep(3)
     pave_agent_end = datetime.datetime.now()
-    log_this(f"  Pave Agent res code: {res.status_code}, took {pave_agent_end-pave_agent_start}", "debug")
+    log_this(f"  {user_id=} Pave Agent res code: {res.status_code}, took {pave_agent_end-pave_agent_start}", "debug")
 
     # Date ranges for pave
     start_date_str = (
@@ -59,7 +58,7 @@ def run_on_user(access_token, user_id):
         transactions = response.json()["transactions"]
 
         if len(transactions) > 0:
-            log_this(f"   Inserting {json.dumps(transactions)[:200]}... into transactions", "info")
+            log_this(f"   Inserting {len(transactions)}... into transactions", "info")
 
             # try:
             #     mongo_collection.update_one(
@@ -102,7 +101,7 @@ def run_on_user(access_token, user_id):
         balances = response.json()["accounts_balances"]
 
         if len(balances) > 0:
-            log_this(f"    Inserting {json.dumps(balances)[:200]} into balances", "info")
+            log_this(f"    Inserting {len(balances)} balances", "info")
 
             # try:
             #     for balance_obj in balances:
@@ -140,7 +139,7 @@ def run_on_user(access_token, user_id):
             log_this(f"    Balance insertion took: {mongo_timer_end-mongo_timer}", "info")
 
 
-executor = concurrent.futures.ProcessPoolExecutor(10)
+executor = concurrent.futures.ProcessPoolExecutor()
 futures = [executor.submit(run_on_user, row[0], row[1]) for row in rows]
 concurrent.futures.wait(futures)
 
