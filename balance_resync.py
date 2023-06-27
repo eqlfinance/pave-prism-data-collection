@@ -16,15 +16,17 @@ conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
 
 rows = conn.execute(
-    "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes') OR last_validated_at >= (NOW() - INTERVAL '30 minutes')"
+    "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE status = 'active'"
 ).fetchall()
+
+
+def run_on_user(user_id, access_token):
+    print(f"{user_id} | {access_token}")
 
 executor = concurrent.futures.ProcessPoolExecutor(10)
 futures = [executor.submit(run_on_user, row[0], row[1]) for row in rows]
 concurrent.futures.wait(futures)
 
-def run_on_user(user_id, access_token):
-    print(f"{user_id} | {access_token}")
 
 
 def run():
