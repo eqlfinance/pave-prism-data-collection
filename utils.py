@@ -19,17 +19,17 @@ from google.cloud import secretmanager
 # Get pave secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-pave_table = "Pave-Production"
+pave_table = "pave-stage"
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/pave-agent-decryption-keys/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/pave-agent-decryption-keys/versions/latest"
 ).payload.data.decode("UTF-8")
 keys = json.loads(keys)["KEYS"]
 
 # Pave url necessities
 pave_str = secret_manager_client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/pave-prism-info/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/pave-prism-info/versions/latest"
 ).payload.data.decode("UTF-8")
 
 pave_data = json.loads(pave_str)
@@ -54,13 +54,13 @@ logger.addHandler(normal_log_handler)
 client = secretmanager.SecretManagerServiceClient()
 
 CREDS = client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/eql-backend-service-dev-creds/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/eql-backend-service-stage-creds/versions/latest"
 ).payload.data.decode("UTF-8")
 
 creds_obj = json.loads(CREDS)
 
 DB_PARAMS = client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/eql-backend-service-dev-db/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/eql-backend-service-stage-db/versions/latest"
 ).payload.data.decode("UTF-8")
 
 db_params_obj = json.loads(DB_PARAMS)
@@ -87,7 +87,7 @@ postgres_pool = sqlalchemy.create_engine(
 )
 
 mongodb_uri = client.access_secret_version(
-    name=f"projects/eql-data-processing/secrets/mongodb-uri/versions/latest"
+    name=f"projects/eql-data-processing-stage/secrets/mongodb-uri/versions/latest"
 ).payload.data.decode("UTF-8")
 
 current_mongo_connection:pymongo.MongoClient = None
