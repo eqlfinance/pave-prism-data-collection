@@ -20,16 +20,15 @@ rows = conn.execute(
 
 user_ids = [str(row[0]) for row in rows]
 
-# Get all user access tokens and upload transaction/balance them using the pave agent
-#for user_id in tqdm(user_ids):
 def run_on_user(user_id):
+    log_this(f"\n\nRunning for {user_id=}")
     rows = conn.execute(
         f"SELECT DISTINCT id FROM public.plaid_links WHERE user_id = '{user_id}'"
     ).fetchall()
     plaid_link_ids = [str(row[0]) for row in rows]
 
     if len(plaid_link_ids) == 0:
-        log_this(f"\tNo plaid links for user {user_id}", "warning")
+        log_this(f"\tNo plaid links for {user_id=}", "warning")
         return
 
     rows = conn.execute(
@@ -95,7 +94,7 @@ def run_on_user(user_id):
             if len(balances) > 0:
                 try:
                     for balance_obj in balances:
-                        log_this(f"\tInserting {json.dumps(balance_obj['balances'])} into balances", "info")
+                        log_this(f"\tInserting {len(balance_obj['balances'])} balances", "info")
                         # Add each balance object that isn't already listed in the account @ balance_obj["account_id"]
                         mongo_collection.update_one(
                             {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance_obj["account_id"]}}},
@@ -118,7 +117,7 @@ def run_on_user(user_id):
                     exit(1)
 
             else:
-                log_this("\tGot to daily db insertion but no transactions were found for the date range", "warning")
+                log_this("\tGot to daily db insertion but no balances were found for the date range", "warning")
         except Exception as e:
             log_this("\tCould not find user after uploading balances", "error")
             log_this(f"{e}", "error")
