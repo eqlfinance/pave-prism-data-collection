@@ -1,4 +1,5 @@
 from utils import *
+import concurrent.futures
 
 handler = RotatingFileHandler('/home/langston/pave-prism/logs/daily-balance-data-sync.log', 'a+', (1000**2)*200, 2)
 handler.setFormatter(formatter)
@@ -20,7 +21,8 @@ rows = conn.execute(
 user_ids = [str(row[0]) for row in rows]
 
 # Get all user access tokens and upload transaction/balance them using the pave agent
-for user_id in tqdm(user_ids):
+#for user_id in tqdm(user_ids):
+def run_on_user(user_id):
     rows = conn.execute(
         f"SELECT DISTINCT id FROM public.plaid_links WHERE user_id = '{user_id}'"
     ).fetchall()
@@ -28,7 +30,7 @@ for user_id in tqdm(user_ids):
 
     if len(plaid_link_ids) == 0:
         log_this(f"\tNo plaid links for user {user_id}", "warning")
-        continue
+        return
 
     rows = conn.execute(
         f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY end_date DESC LIMIT 1"
@@ -127,6 +129,10 @@ for user_id in tqdm(user_ids):
     else:
         log_this("\tCould not upload balances to mongodb", "error")
 
+
+executor = concurrent.futures.ProcessPoolExecutor(10)
+futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
+concurrent.futures.wait(futures)
 
 close_backend_connection()
 close_pymongo_connection()
