@@ -24,7 +24,8 @@ user_ids = [str(row[0]) for row in rows if str(row[0]) not in pave_user_ids]
 
 start = datetime.datetime.now()
 # Get all user access tokens and upload transaction/balance them using the pave agent
-for user_id in tqdm(user_ids):
+
+def run_on_user(user_id):
     loop_start = datetime.datetime.now()
     rows = conn.execute(
         f"SELECT DISTINCT access_token FROM public.plaid_links WHERE user_id = '{user_id}'"
@@ -150,10 +151,11 @@ for user_id in tqdm(user_ids):
     #####################################################################
     finish = datetime.datetime.now()
 
-    log_this(f"    > Loop time took {finish-loop_start}")
-    # If this has taken 4 hours it probably got stuck somewhere
-    if finish - start > datetime.timedelta(hours=4):
-        break
+    log_this(f"    > Loop time took {finish-loop_start} | Index: {user_ids.index(user_id)}")
+
+executor = concurrent.futures.ProcessPoolExecutor(10)
+futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
+concurrent.futures.wait(futures)
 
 close_backend_connection()
 close_pymongo_connection()
