@@ -40,7 +40,7 @@ def run_on_user(user_id):
 
     # Select all user plaid links
     rows = conn.execute(
-        f"SELECT DISTINCT id FROM public.plaid_links WHERE user_id = '{user_id}' AND status 'active'"
+        f"SELECT DISTINCT id FROM public.plaid_links WHERE user_id = '{user_id}' AND status = 'active'"
     ).fetchall()
     plaid_link_ids = [str(row[0]) for row in rows]
 
