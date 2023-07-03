@@ -10,6 +10,7 @@ import requests
 import sqlalchemy
 from tqdm import tqdm
 import concurrent.futures
+import os
 from logging.handlers import RotatingFileHandler
 from cryptography.fernet import Fernet, MultiFernet
 
