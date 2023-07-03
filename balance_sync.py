@@ -90,7 +90,7 @@ def run_on_user(user_id):
 
         if response.status_code == 200:
             # Date ranges for pave, pull for 90 days
-            num_balance_days = 90
+            num_balance_days = 180
             start_date_str = (
                 datetime.datetime.now() - datetime.timedelta(days=num_balance_days)
             ).strftime("%Y-%m-%d")
@@ -120,12 +120,21 @@ def run_on_user(user_id):
                         log_this(f"\tInserting balances for {len(accounts_balances)} accounts.\n\tPulling balances from mongodb took {find_balance_doc_timer_end-find_balance_doc_timer}", "info")
 
                         if not current_balance_document:
-                            current_balance_document = []
+                            current_balance_document = {}
 
                         for balance_obj in accounts_balances:
-                            # Perform an aggregation to get the balances currently in the db
-                            current_balances = [x for x in current_balance_document['balances']['accounts_balances'] if x['account_id'] == balance_obj["account_id"]]
-                            current_balances = [*current_balances[:-(len(balance_obj["balances"])+1)], *balance_obj["balances"]]
+                            if current_balance_document.get("balances"):
+                                current_balances_from_object = [x for x in current_balance_document['balances']['accounts_balances'] if x['account_id'] == balance_obj["account_id"]]
+                            else:
+                                current_balances_from_object = []
+                                
+                            current_balances = []
+
+                            if len(current_balances_from_object) > 0:
+                                current_balances = current_balances_from_object[0]['balances'][:-(len(balance_obj["balances"])+1)]
+
+                            current_balances.extend(balance_obj["balances"])
+                            log_this(f"    Balance days: {len(current_balances)}")
 
                             matched = mongo_collection.update_one(
                                 {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance_obj["account_id"]}}},
