@@ -2,7 +2,7 @@ from utils import *
 
 handler = RotatingFileHandler('/home/langston/pave-prism/logs/new-user-data-sync.log', 'a+', (1000**2)*200, 2)
 handler.setFormatter(formatter)
-handler.setLevel(logging.INFO)
+handler.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
 process_start = datetime.datetime.now()
