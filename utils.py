@@ -28,7 +28,7 @@ counters = None
 if not os.path.isfile(f"{home_path}counters.json"):
     with open(f'{home_path}counters.json', 'w') as file:
         default_counter_values = {"balance_sync_counter": 0,"balance_sync_usd": 6}
-        json.dump(default_counter_values)
+        json.dump(default_counter_values, file)
         counters = default_counter_values
 
 if counters is None:
