@@ -46,7 +46,7 @@ def run_on_user(user_id):
     else:
         # From the active plaid links, get the most recent plaid transaction set
         rows = conn.execute(
-            f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY end_date, created_at DESC LIMIT 1"
+            f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY created_at DESC LIMIT 10"
         ).fetchall()
 
 
@@ -120,6 +120,7 @@ def run_on_user(user_id):
                     log_this(f"\tInserting balances for {len(accounts_balances)} accounts.\n\tPulling balances from mongodb took {find_balance_doc_timer_end-find_balance_doc_timer}", "info")
 
                     if not current_balance_document:
+                        log_this(f"\tCouldn't find any mongo balance record for {user_id=}")
                         current_balance_document = {}
 
                     for balance_obj in accounts_balances:
@@ -143,7 +144,7 @@ def run_on_user(user_id):
                                 current_balances = current_balances_from_object[0]['balances'][:-(len(balance_obj["balances"]))]
 
                         current_balances.extend(balance_obj["balances"])
-                        log_this(f"    Balance days: {len(current_balances)}")
+                        log_this(f"    Total balance days: {len(current_balances)} for account_id={balance_obj['account_id']}")
 
                         # This could fail if there's something incorrect about the balances in current balances
                         # like wrong format or if I did a dumb here.
@@ -164,6 +165,7 @@ def run_on_user(user_id):
 
                         # If there was no balances object with a matching account_id, push this to accounts_balances
                         if matched == 0:
+                            log_this(f"    Couldn't find account_id={balance_obj['account_id']} in mongo accounts balances, pushing")
                             balance_obj["balances"] = current_balances
                             mongo_collection.update_one(
                                 {"user_id": str(user_id)},
@@ -173,6 +175,8 @@ def run_on_user(user_id):
                                     }
                                 }
                             )
+                        else:
+                            log_this(f"    accounts_balances @ account_id={balance_obj['account_id']} {user_id=}")
 
                     # Update the end date to today
                     mongo_collection.update_one(
