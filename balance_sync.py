@@ -50,6 +50,7 @@ def run_on_user(user_id):
             f"SELECT data FROM public.plaid_raw_transaction_sets WHERE link_id IN {str(tuple(plaid_link_ids)).replace(',)', ')')} ORDER BY end_date, created_at DESC LIMIT 1"
         ).fetchall()
 
+
         accounts = []
         for row in rows:
             row = row._asdict()['data']
@@ -57,6 +58,7 @@ def run_on_user(user_id):
                 _accounts = item["accounts"]
                 for account in _accounts:
                     if account["account_id"] not in [x["account_id"] for x in accounts]:
+                        log_this(f"\tProcessing account {account['account_id']}")
                         accounts.append({
                             "account_id": str(account["account_id"]),
                             "balances": {
