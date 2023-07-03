@@ -30,7 +30,6 @@ user_set_length = len(rows) // balance_sync_user_set_divisor
 user_set_start_idx = int((len(rows) * balance_sync_counter)/balance_sync_user_set_divisor)
 user_ids = [str(row[0]) for row in rows[user_set_start_idx : user_set_start_idx + user_set_length]]
 log_this(f"Running for {user_set_length} users [{user_set_start_idx} -> {user_set_start_idx + user_set_length}]")
-user_ids = [str(row[0]) for row in rows]
 
 def run_on_user(user_id):
     start = datetime.datetime.now()
