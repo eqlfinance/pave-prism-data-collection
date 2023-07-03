@@ -137,7 +137,10 @@ def run_on_user(user_id):
                         # Should only be one object if the account_id is found
                         # chop the last num_balance_days off and extend current balances with new Pave data
                         if len(current_balances_from_object) > 0:
-                            current_balances = current_balances_from_object[0]['balances'][:-(len(balance_obj["balances"]))]
+                            if mongo_timer.strftime("%Y-%m-%d") == current_balances_from_object[0]["balances"][-1]["date"]:
+                                current_balances = current_balances_from_object[0]['balances'][:-(len(balance_obj["balances"]) + 1)]
+                            else:
+                                current_balances = current_balances_from_object[0]['balances'][:-(len(balance_obj["balances"]))]
 
                         current_balances.extend(balance_obj["balances"])
                         log_this(f"    Balance days: {len(current_balances)}")
