@@ -14,14 +14,15 @@ mongo_db = get_pymongo_connection()[pave_table]
 
 balance_sync_user_set_divisor = os.getenv("BALANCE_SYNC_USD")
 if balance_sync_user_set_divisor is None:
-    os.environ["BALANCE_SYNC_USD"] = balance_sync_user_set_divisor = 6
+    balance_sync_user_set_divisor = 6
+    os.environ["BALANCE_SYNC_USD"] = str(balance_sync_user_set_divisor)
 
 balance_sync_counter = os.getenv('BALANCE_SYNC_COUNTER')
 if balance_sync_counter is None:
-    os.environ['BALANCE_SYNC_COUNTER'] = balance_sync_counter = 0
+    balance_sync_counter = 0
 else:
-    os.environ['BALANCE_SYNC_COUNTER'] = balance_sync_counter = (balance_sync_counter+1) % balance_sync_user_set_divisor
-
+    balance_sync_counter = (balance_sync_counter+1) % balance_sync_user_set_divisor
+os.environ['BALANCE_SYNC_COUNTER'] = str(balance_sync_counter)
 
 rows = conn.execute(
     "SELECT DISTINCT id FROM public.users ORDER BY id ASC"
