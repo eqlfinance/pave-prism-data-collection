@@ -179,10 +179,10 @@ def run_on_user(user_id):
     end = datetime.datetime.now()
     print(f'{user_id} balance sync took: {end-start}')
 
-with concurrent.futures.ThreadPoolExecutor(10) as executor:
+with concurrent.futures.ProcessPoolExecutor(10) as executor:
     futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
 
-    done, incomplete = concurrent.futures.wait(futures, )
+    done, incomplete = concurrent.futures.wait(futures, timeout=60*30)
     log_this(f"Balance Sync: Ran on {len(done)}/{len(user_ids)} users ({len(incomplete)} incomplete)")
 
 close_backend_connection()
