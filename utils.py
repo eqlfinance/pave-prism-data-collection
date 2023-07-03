@@ -18,10 +18,33 @@ from google.cloud.sql.connector import Connector
 from google.oauth2 import service_account
 from google.cloud import secretmanager
 
-# Get pave secret values
-secret_manager_client = secretmanager.SecretManagerServiceClient()
 
-pave_table = "pave-stage"
+logger = logging.getLogger("stevenslav2")
+logger.setLevel(logging.DEBUG)
+
+home_path = "/home/langston/pave-prism/"
+counters = None
+
+if not os.path.isfile(f"{home_path}counters.json"):
+    with open(f'{home_path}counters.json', 'w') as file:
+        default_counter_values = {"balance_sync_counter": 0,"balance_sync_usd": 6}
+        json.dump(default_counter_values)
+        counters = default_counter_values
+
+if counters is None:
+    with open(f'{home_path}counters.json', 'r') as file:
+        counters = json.load(file)
+
+proc_id = str(uuid.uuid4())[:8]
+formatter = logging.Formatter(f'{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s', datefmt='%m-%d %H:%M:%S')
+
+normal_log_handler = RotatingFileHandler(f'{home_path}stevenslav2.log', 'a+', 1000**3, 2)
+normal_log_handler.setFormatter(formatter)
+normal_log_handler.setLevel(logging.DEBUG)
+logger.addHandler(normal_log_handler)
+
+# Get secret values
+secret_manager_client = secretmanager.SecretManagerServiceClient()
 
 # Decrpytion keys
 keys = secret_manager_client.access_secret_version(
@@ -29,7 +52,7 @@ keys = secret_manager_client.access_secret_version(
 ).payload.data.decode("UTF-8")
 keys = json.loads(keys)["KEYS"]
 
-# Pave url necessities
+# Pave necessities
 pave_str = secret_manager_client.access_secret_version(
     name=f"projects/eql-data-processing-stage/secrets/pave-prism-info/versions/latest"
 ).payload.data.decode("UTF-8")
@@ -41,17 +64,7 @@ pave_headers = {
     "Content-Type": "application/plaid+json",
     "x-api-key": pave_x_api_key,
 }
-
-logger = logging.getLogger("stevenslav2")
-logger.setLevel(logging.DEBUG)
-
-proc_id = str(uuid.uuid4())[:8]
-formatter = logging.Formatter(f'{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s', datefmt='%m-%d %H:%M:%S')
-
-normal_log_handler = RotatingFileHandler('/home/langston/pave-prism/stevenslav2.log', 'a+', 1000**3, 2)
-normal_log_handler.setFormatter(formatter)
-normal_log_handler.setLevel(logging.DEBUG)
-logger.addHandler(normal_log_handler)
+pave_table = "pave-stage"
 
 client = secretmanager.SecretManagerServiceClient()
 
@@ -121,7 +134,7 @@ def close_backend_connection():
 def log_this(message:str, severity:str = "debug"):
     global logger
     logger.log(logging._nameToLevel[severity.upper()], message)
-    #subprocess.run(["gcloud", "logging", "write", "stevenslav", message, f"--severity={severity.upper()}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
+    subprocess.run(["gcloud", "logging", "write", "stevenslav", message, f"--severity={severity.upper()}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
 
 def base64_decode(val: str) -> bytes:
     return base64.urlsafe_b64decode(val.encode("ascii"))
