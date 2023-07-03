@@ -64,7 +64,7 @@ pave_headers = {
     "Content-Type": "application/plaid+json",
     "x-api-key": pave_x_api_key,
 }
-pave_table = "pave"
+pave_table = "Pave-Production"
 
 client = secretmanager.SecretManagerServiceClient()
 
