@@ -20,7 +20,7 @@ balance_sync_counter = (balance_sync_counter+1) % balance_sync_user_set_divisor
 
 with open(f'{home_path}counters.json', 'w') as file:
     counters["balance_sync_counter"] = balance_sync_counter
-    json.dump(default_counter_values)
+    json.dump(counters,file)
 
 rows = conn.execute(
     "SELECT DISTINCT id FROM public.users ORDER BY id ASC"
