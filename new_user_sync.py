@@ -116,7 +116,7 @@ def run_on_user(user_id):
                     {
                         title: obj,
                         "user_id": user_id,
-                        "response_code": response.status_code,
+                        "response_code": response.status_code, # depreciated
                         "date": datetime.datetime.now(),
                     },
                     upsert=True,
@@ -151,11 +151,15 @@ def run_on_user(user_id):
     #####################################################################
     finish = datetime.datetime.now()
 
-    log_this(f"    > Loop time took {finish-loop_start} | Index: {user_ids.index(user_id)}")
+    log_this(f"    New user sync took {finish-loop_start} for {user_id}")
 
-executor = concurrent.futures.ProcessPoolExecutor(10)
-futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
-concurrent.futures.wait(futures)
+with concurrent.futures.ProcessPoolExecutor(10) as executor:
+    futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
+    done, incomplete = concurrent.futures.wait(futures)
+    log_this(f"New Users Sync: Ran on {len(done)}/{len(user_ids)} users ({len(incomplete)} incomplete)")
 
 close_backend_connection()
 close_pymongo_connection()
+
+process_end = datetime.datetime.now()
+log_this(f"New Users Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")

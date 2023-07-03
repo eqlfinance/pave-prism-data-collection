@@ -7,8 +7,7 @@ logger.addHandler(handler)
 
 process_start = datetime.datetime.now()
 
-log_this("\n\nRuninng transaction sync:\n", "info")
-log_this(f"Process start: {process_start}", "info")
+log_this(f"Runinng transaction sync Process start: {process_start}\n", "info")
 
 # Open connections
 conn = get_backend_connection()
@@ -98,3 +97,6 @@ for row in tqdm(rows):
 
 close_backend_connection()
 close_pymongo_connection()
+
+process_end = datetime.datetime.now()
+log_this(f"Transaction Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")

@@ -7,7 +7,7 @@ logger.addHandler(handler)
 
 process_start = datetime.datetime.now()
 
-log_this(f"\n\nRuninng Balance Sync Process start: {process_start}", "info")
+log_this(f"Runinng Balance Sync Process start: {process_start}", "info")
 
 conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
@@ -33,7 +33,7 @@ log_this(f"Running for {user_set_length} users [{user_set_start_idx} -> {user_se
 
 def run_on_user(user_id):
     start = datetime.datetime.now()
-    log_this(f"\nRunning Balance Sync for {user_id=} ({start})")
+    log_this(f"Running Balance Sync for {user_id=} ({start})")
 
     # Get all active user plaid links
     rows = conn.execute(
@@ -195,17 +195,17 @@ def run_on_user(user_id):
             log_this("\tCould not upload balances to Pave", "error")
 
     end = datetime.datetime.now()
-    print(f'{user_id} balance sync took: {end-start}')
+    print(f'{user_id} Balance Sync took: {end-start}')
 
 # Run 10 concurrent processes of this. I tried ThreadPool but it start hanging. This is pretty fast anyways
 # and doesn't send the vm to the moon
 with concurrent.futures.ProcessPoolExecutor(10) as executor:
     futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
-    done, incomplete = concurrent.futures.wait(futures, timeout=60*30)
+    done, incomplete = concurrent.futures.wait(futures)
     log_this(f"Balance Sync: Ran on {len(done)}/{len(user_ids)} users ({len(incomplete)} incomplete)")
 
 close_backend_connection()
 close_pymongo_connection()
 
 process_end = datetime.datetime.now()
-log_this(f"Balance Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}", "info")
+log_this(f"Balance Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")

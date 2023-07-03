@@ -7,8 +7,7 @@ logger.addHandler(handler)
 
 process_start = datetime.datetime.now()
 
-log_this("\n\nRuninng new link sync:\n", "info")
-log_this(f"Process start: {process_start}", "info")
+log_this(f"Runinng new link sync Process start: {process_start}\n", "info")
 
 # Open connections
 conn = get_backend_connection()
@@ -18,12 +17,13 @@ rows = conn.execute(
     "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= (NOW() - INTERVAL '30 minutes') OR last_validated_at >= (NOW() - INTERVAL '30 minutes')"
 ).fetchall()
 
-for row in tqdm(rows):
-    row = row._asdict()
-    access_token, user_id = decrypt(row["access_token"]), str(row["user_id"])
+#at_uid: the Access Token - User Id pair from plaid links
+def run_on_user(at_uid):
+    at_uid = at_uid._asdict()
+    access_token, user_id = decrypt(at_uid["access_token"]), str(at_uid["user_id"])
     time_in_days = 365 * 2
 
-    log_this(f"{user_id=}")
+    log_this(f"Running new link sync for {user_id=}")
     pave_agent_start = datetime.datetime.now()
     res = requests.post(
         f"http://127.0.0.1:8123/v1/users/{user_id}/upload?num_transaction_days={time_in_days}",
@@ -98,46 +98,32 @@ for row in tqdm(rows):
     else:
         mongo_timer = datetime.datetime.now()
         mongo_collection = mongo_db["balances"]
-        balances = response.json()["accounts_balances"]
+        balance_obj = response.json()
 
-        if len(balances) > 0:
-            log_this(f"    Inserting {json.dumps(balances)[:200]} into balances", "info")
+        log_this(f"    Moving account data for {user_id}'s accounts {[x['account_id'] for x in balance_obj['accounts_balances']]} into balances", "info")
 
-            try:
-                for balance_obj in balances:
-                    # Add each balance object that isn't already listed in the account @ balance_obj["account_id"]
-                    result = mongo_collection.update_one(
-                        {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance_obj["account_id"]}}},
-                        {"$addToSet": {"balances.accounts_balances.$.balances": {"$each": balance_obj["balances"]}},
-                         "$set":{"balances.accounts_balances.$.days_negative": balance_obj["days_negative"],
-                                "balances.accounts_balances.$.days_single_digit": balance_obj["days_single_digit"],
-                                "balances.accounts_balances.$.days_double_digit": balance_obj["days_double_digit"],
-                                "balances.accounts_balances.$.median_balance": balance_obj["median_balance"]}}
-                    )
+        try:
+            mongo_collection.update_one(
+                {"user_id": str(user_id)},
+                {"$set": {"balances": response.json(), "date": datetime.datetime.now()}},
+            )
 
-                    if result.matched_count == 0:
-                        log_this(f"\tInserting {json.dumps(balance_obj['balances'])} into balances", "info")
-                        mongo_collection.update_one(
-                            {"user_id": str(user_id)},
-                            {"$push": {"balances.accounts_balances": balances},
-                             "$set":{"balances.accounts_balances.$.days_negative": balance_obj["days_negative"],
-                                "balances.accounts_balances.$.days_single_digit": balance_obj["days_single_digit"],
-                                "balances.accounts_balances.$.days_double_digit": balance_obj["days_double_digit"],
-                                "balances.accounts_balances.$.median_balance": balance_obj["median_balance"]}}
-                        )
 
-                mongo_collection.update_one(
-                    {"user_id": str(user_id)},
-                    {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}},
-                    bypass_document_validation = True
-                )
-            except Exception as e:
-                log_this(f"    COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC", "error")
-                log_this(f"    {e}", "error")
+        except Exception as e:
+            log_this(f"    COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC", "error")
+            log_this(f"    {e}", "error")
 
-            mongo_timer_end = datetime.datetime.now()
-            log_this(f"    Balance insertion took: {mongo_timer_end-mongo_timer}", "info")
+        mongo_timer_end = datetime.datetime.now()
+        log_this(f"    Balance insertion took: {mongo_timer_end-mongo_timer}", "info")
 
+
+with concurrent.futures.ProcessPoolExecutor(10) as executor:
+    futures = [executor.submit(run_on_user, row) for row in rows]
+    done, incomplete = concurrent.futures.wait(futures)
+    log_this(f"New Links Sync sync: Ran on {len(done)}/{len(rows)} users ({len(incomplete)} incomplete)")
 
 close_backend_connection()
 close_pymongo_connection()
+
+process_end = datetime.datetime.now()
+log_this(f"New Links Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")

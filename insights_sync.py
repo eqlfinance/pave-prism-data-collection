@@ -1,14 +1,13 @@
 from utils import *
 
-handler = RotatingFileHandler('/home/langston/pave-prism/logs/weekly-recurring-data-sync.log', 'a', (1000**2)*200, 2)
+handler = RotatingFileHandler(f'{home_path}logs/weekly-recurring-data-sync.log', 'a', (1000**2)*200, 2)
 handler.setFormatter(formatter)
 handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 
 process_start = datetime.datetime.now()
 
-log_this("\n\nRuninng unified insights sync:\n", "info")
-log_this(f"Process start: {process_start}", "info")
+log_this(f"Runinng Unified Insights Sync Process start: {process_start}", "info")
 
 # Open connections
 conn = get_backend_connection()
@@ -28,7 +27,9 @@ end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
 params = {"start_date": start_date_str, "end_date": end_date_str}
 
 # Get all users unified insight data
-for user_id in tqdm(user_ids):
+def run_on_user(user_id):
+    start = datetime.datetime.now()
+    log_this(f"Running Insights sync for {user_id=}")
 
     # Store the unified insights data from pave
     params = {
@@ -36,6 +37,7 @@ for user_id in tqdm(user_ids):
         "end_date": end_date_str,
         "with_transactions": True,
     }
+
     response = handle_pave_request(
         user_id=user_id,
         method="get",
@@ -86,6 +88,16 @@ for user_id in tqdm(user_ids):
         collection_name="attributes",
         response_column_name="attributes",
     )
+    end = datetime.datetime.now()
+    print(f'{user_id} Insights Sync took: {end-start}')
+
+with concurrent.futures.ProcessPoolExecutor(10) as executor:
+    futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
+    done, incomplete = concurrent.futures.wait(futures)
+    log_this(f"Insights sync: Ran on {len(done)}/{len(user_ids)} users ({len(incomplete)} incomplete)")
 
 close_backend_connection()
 close_pymongo_connection()
+
+process_end = datetime.datetime.now()
+log_this(f"Unified Insights Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")
