@@ -12,26 +12,27 @@ log_this(f"\n\nRuninng Balance Sync Process start: {process_start}", "info")
 conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
 
-balance_sync_user_set_divisor = os.getenv("BALANCE_SYNC_USD")
-if balance_sync_user_set_divisor is None:
-    balance_sync_user_set_divisor = 6
-    subprocess.call(['export', f'BALANCE_SYNC_USD={str(balance_sync_user_set_divisor)}'], shell=True)
+# balance_sync_user_set_divisor = os.getenv("BALANCE_SYNC_USD")
+# if balance_sync_user_set_divisor is None:
+#     balance_sync_user_set_divisor = 6
+#     subprocess.call([f'export BALANCE_SYNC_USD={str(balance_sync_user_set_divisor)}'], shell=True)
 
-balance_sync_counter = os.getenv('BALANCE_SYNC_COUNTER')
-if balance_sync_counter is None:
-    balance_sync_counter = 0
-else:
-    balance_sync_counter = (balance_sync_counter+1) % balance_sync_user_set_divisor
-subprocess.call(['export', f'BALANCE_SYNC_COUNTER={str(balance_sync_counter)}'], shell=True)
+# balance_sync_counter = os.getenv('BALANCE_SYNC_COUNTER')
+# if balance_sync_counter is None:
+#     balance_sync_counter = 0
+# else:
+#     balance_sync_counter = (balance_sync_counter+1) % balance_sync_user_set_divisor
+# subprocess.call([f'export BALANCE_SYNC_COUNTER={str(balance_sync_counter)}'], shell=True)
 
 rows = conn.execute(
     "SELECT DISTINCT id FROM public.users ORDER BY id ASC"
 ).fetchall()
 
-user_set_length = len(rows) // balance_sync_user_set_divisor
-user_set_start_idx = int((len(rows) * balance_sync_counter)/balance_sync_user_set_divisor)
-user_ids = [str(row[0]) for row in rows[user_set_start_idx : user_set_start_idx + user_set_length]]
-log_this(f"Running for {user_set_length} users [{user_set_start_idx} -> {user_set_start_idx + user_set_length}]")
+# user_set_length = len(rows) // balance_sync_user_set_divisor
+# user_set_start_idx = int((len(rows) * balance_sync_counter)/balance_sync_user_set_divisor)
+# user_ids = [str(row[0]) for row in rows[user_set_start_idx : user_set_start_idx + user_set_length]]
+# log_this(f"Running for {user_set_length} users [{user_set_start_idx} -> {user_set_start_idx + user_set_length}]")
+user_ids = [str(row[0]) for row in rows]
 
 def run_on_user(user_id):
     start = datetime.datetime.now()
