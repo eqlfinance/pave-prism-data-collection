@@ -75,7 +75,7 @@ def run_on_user(user_id):
                             "subtype": account["subtype"]
                         })
 
-        log_this(f"\tGot balance_objects:\n{accounts=}")
+        log_this(f"\t{user_id=} Got balance_objects: {accounts=}")
 
         # Post the account balances to Pave API
         response = handle_pave_request(
@@ -106,11 +106,11 @@ def run_on_user(user_id):
                 params=params,
             )
 
-            mongo_timer = datetime.datetime.now()
             mongo_collection = mongo_db["balances"]
             accounts_balances = response.json().get("accounts_balances", [])
 
             if len(accounts_balances) > 0:
+                mongo_timer = datetime.datetime.now()
                 try: # Wrapped in try catch because not passing validation causes errors
 
                     # Timing for future changes, maybe find an aggregation to pull the last 90 or num_balance_days
@@ -135,7 +135,7 @@ def run_on_user(user_id):
                         else:
                             current_balances_from_object = []
 
-                        # Should only be one object if the account_id is found
+                        # Should only be one object if the account_id is found, if not take the first one anyways
                         # chop the last num_balance_days off and extend current balances with new Pave data
                         if len(current_balances_from_object) > 0:
                             if mongo_timer.strftime("%Y-%m-%d") == current_balances_from_object[0]["balances"][-1]["date"]:
@@ -150,6 +150,7 @@ def run_on_user(user_id):
                         # like wrong format or if I did a dumb here.
                         # The query finds the balances object in balances.accounts_balances with matching account_id
                         # and updates it
+                        update_timer = datetime.datetime.now()
                         matched = mongo_collection.update_one(
                             {"user_id": str(user_id), "balances.accounts_balances": {"$elemMatch": {"account_id": balance_obj["account_id"]}}},
                             {
@@ -177,6 +178,9 @@ def run_on_user(user_id):
                             )
                         else:
                             log_this(f"    accounts_balances @ account_id={balance_obj['account_id']} {user_id=}")
+                            
+                        update_timer2 = datetime.datetime.now()
+                        log_this(f"{user_id} upload balances time took {update_timer2-update_timer} | {'Pushed into accounts_balances' if matched else 'Updated accounts_balance object'}")
 
                     # Update the end date to today
                     mongo_collection.update_one(
@@ -184,18 +188,17 @@ def run_on_user(user_id):
                         {"$set": {"balances.to": end_date_str, "date": datetime.datetime.now()}},
                         bypass_document_validation = True
                     )
-                except Exception as e:
-                    log_this(f"COULD NOT UPDATE BALANCE FOR USER {user_id} ON DAILY SYNC", "error")
+                except Exception as e: # This indicates a validation error
+                    log_this(f"VALIDATION ERROR ON USER {user_id} ON DAILY SYNC", "error")
                     log_this(f"{e}", "error")
-                    exit(1)
 
+                mongo_timer_end = datetime.datetime.now()
+                log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
             else:
+                # This happens if the GET balances call to Pave API fails for whatever reason
                 log_this("\tGot to daily db insertion but no balances were found for the date range", "warning")
-
-            mongo_timer_end = datetime.datetime.now()
-            log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
-
         else:
+            # This happens if the POST balances (balance upload) call to Pave API fails
             log_this("\tCould not upload balances to Pave", "error")
 
     end = datetime.datetime.now()

@@ -25,6 +25,7 @@ logger.setLevel(logging.DEBUG)
 home_path = "/home/langston/pave-prism/"
 counters = None
 
+# Get the counters data. This allows for runing on smaller sets of users
 if not os.path.isfile(f"{home_path}counters.json"):
     with open(f'{home_path}counters.json', 'w') as file:
         default_counter_values = {"balance_sync_counter": 0,"balance_sync_usd": 6}
@@ -66,6 +67,7 @@ pave_headers = {
 }
 pave_table = "pave-stage"
 
+# Backend connection necessities
 client = secretmanager.SecretManagerServiceClient()
 
 CREDS = client.access_secret_version(
@@ -132,6 +134,7 @@ def close_backend_connection():
     if current_backend_connection: current_backend_connection.close()
 
 def log_this(message:str, severity:str = "debug"):
+    # Logging to a local file and gcloud
     global logger
     logger.log(logging._nameToLevel[severity.upper()], message)
     subprocess.run(["gcloud", "logging", "write", "stevenslav", message, f"--severity={severity.upper()}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
@@ -160,27 +163,23 @@ def handle_pave_request(
 ) -> requests.Response:
     request_timer = datetime.datetime.now()
 
-    if method == "get":
-        res = requests.get(f"{endpoint}", json=payload, headers=headers, params=params)
-    elif method == "post":
-        res = requests.post(f"{endpoint}", json=payload, headers=headers, params=params)
+    if method.lower().strip() in ["get", "post"]:
+        res = requests.request(method.upper().strip(), f"{endpoint}", json=payload, headers=headers, params=params)
     else:
         raise ValueError("Method not understood {}".format(method))
 
     res_code = res.status_code
-    res_json_string = json.dumps(res.json())
 
-    if res_code == 429:
+    if res_code == 429: # Rate limit!
         sleep = 1 if last_wait == 0 else last_wait * 2
-        log_this(f"Request limit reached, waiting {sleep} second(s)", "error")
+        log_this(f"Request limit reached, waiting {sleep} seconds", "error")
         time.sleep(sleep)
         return handle_pave_request(
             user_id, method, endpoint, payload, headers, params, sleep
         )
     else:
         request_timer_end = datetime.datetime.now()
-        log_this(f"{method.upper()} {endpoint} took: {request_timer_end-request_timer}", "info")
-        log_this(f"        Response: {res_code} -> {res_json_string[:100]}{f'... {res_json_string[-100:]}' if len(res_json_string) > 100 else ''}\n", "info")
+        log_this(f"[Response {res_code}] {method.upper()} {endpoint} took: {request_timer_end-request_timer}", "info")
 
         return res
 
@@ -199,7 +198,7 @@ def insert_response_into_db(
                 {
                     response_column_name: res.json(),
                     "user_id": user_id,
-                    "response_code": res.status_code,
+                    "response_code": res.status_code, #depriciated 
                     "date": datetime.datetime.now(),
                 },
                 upsert=True
@@ -207,11 +206,14 @@ def insert_response_into_db(
 
             log_this(f"        {res.matched_count=} {res.modified_count=} {res.upserted_id=}")
             if res.matched_count == 0 and res.modified_count == 0 and res.upserted_id == None:
-                log_this("        Imposible case!!!!")
+                raise Exception("Impossible case")
         except Exception as e:
+            # Most likely a validation error happened
             log_this(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}", "error")
             log_this(f"{e}", "error")
-    else:
+    else: 
+        # No insertion when response code is 400. There was probably a plaid error that prevented
+        # user data from going to Pave so the request to Pave API did not work
         log_this("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()), "warning")
 
     mongo_timer_end = datetime.datetime.now()
