@@ -163,8 +163,9 @@ def handle_pave_request(
 ) -> requests.Response:
     request_timer = datetime.datetime.now()
 
-    if method.lower().strip() in ["get", "post"]:
-        res = requests.request(method.upper().strip(), f"{endpoint}", json=payload, headers=headers, params=params)
+    method = method.upper().strip()
+    if method in ["GET", "POST"]:
+        res = requests.request(method, f"{endpoint}", json=payload, headers=headers, params=params)
     else:
         raise ValueError("Method not understood {}".format(method))
 
@@ -179,7 +180,7 @@ def handle_pave_request(
         )
     else:
         request_timer_end = datetime.datetime.now()
-        log_this(f"[Response {res_code}] {method.upper()} {endpoint} took: {request_timer_end-request_timer}", "info")
+        log_this(f"\t[Response {res_code}] {method.upper()} {endpoint} took: {request_timer_end-request_timer}", "info")
 
         return res
 
