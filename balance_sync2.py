@@ -1,6 +1,7 @@
 from utils import *
 
 def run_on_user(user_id, mongo_db):
+    mongo_collection = mongo_db["balances2"]
     start = datetime.datetime.now()
     log_this(f"**** Running Balance Sync for {user_id=} ({start}) ****")
 
@@ -21,46 +22,42 @@ def run_on_user(user_id, mongo_db):
         params=params,
     )
 
-    mongo_collection = mongo_db["balances"]
-    accounts_balances = response.json().get("accounts_balances", [])
 
-    if len(accounts_balances) > 0:
-        mongo_timer = datetime.datetime.now()
+    if response.status_code == 200:
+        accounts_balances = response.json().get("accounts_balances", [])
         try: # Wrapped in try catch because not passing validation causes errors
             log_this(f"    Inserting balances for {len(accounts_balances)} accounts ({user_id=})", "info")
 
+            bulk_writes = []
+            account_ids = []
+            ab_processing = datetime.datetime.now()
             for balance_obj in accounts_balances:
                 # The object that stores the combined set of past mongo balances and current Pave API
                 # this allows balances in the past {num_balance_days} to be updated
                 current_balances = balance_obj['balances']
                 account_id = balance_obj['account_id']
+                account_ids.append(account_id)
 
-                log_this(f"    Total balance days: {len(current_balances)} for {account_id=}")
-
-                update_timer = datetime.datetime.now()
-
-                bulk_writes = []
                 for balance in current_balances:
                     balance['user_id'] = user_id
                     balance['account_id'] = account_id
+                    balance['pulled_date'] = start
 
-                    bulk_writes.append(pymongo.ReplaceOne({"user_id": user_id, "account_id": balance_obj['account_id'], "date": balance['date']}, replacement=balance, upsert=True))
+                    bulk_writes.append(pymongo.ReplaceOne({"user_id": user_id, "account_id": account_id, "date": balance['date']}, replacement=balance, upsert=True))
 
-                mongo_collection["balances2"].bulk_write(bulk_writes)
-                update_timer2 = datetime.datetime.now()
-                log_this(f"{user_id} upload balances time took {update_timer2-update_timer}")
+            update_timer = datetime.datetime.now()
+            mongo_collection.bulk_write(bulk_writes)
+            update_timer2 = datetime.datetime.now()
+            log_this(f"    {user_id=} bulk writes to balances took {update_timer2-update_timer}, accounts balances processing took {update_timer-ab_processing}: {account_ids=}")
         except Exception as e: # This indicates a validation error
-            log_this(f"VALIDATION ERROR ON USER {user_id} ON DAILY SYNC", "error")
+            log_this(f"MONGO DB OR OTHER ERROR ON USER {user_id} ON DAILY SYNC", "error")
             logger.exception(e)
-
-        mongo_timer_end = datetime.datetime.now()
-        log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
     else:
         # This happens if the GET balances call to Pave API fails for whatever reason
-        log_this("\tGot to daily db insertion but no balances were found for the date range", "warning")
+        log_this(f"        {user_id}: balances call failed for date range {start_date_str}-{end_date_str}", "warning")
 
     end = datetime.datetime.now()
-    print(f'**** {user_id} Balance Sync took: {end-start} ****')
+    log_this(f'**** {user_id} Balance Sync took: {end-start} ****')
 
 def main():
     handler = RotatingFileHandler(f'{home_path}daily-balance-data-sync.log', 'a+', (1000**2)*200, 2)
@@ -92,9 +89,9 @@ def main():
     user_set_length = len(rows) // balance_sync_user_set_divisor
     user_set_start_idx = int((len(rows) * balance_sync_counter)/balance_sync_user_set_divisor)
     user_ids = [str(row[0]) for row in rows[user_set_start_idx : user_set_start_idx + user_set_length]]
-    log_this(f"Running for {user_set_length} users [{user_set_start_idx} -> {user_set_start_idx + user_set_length}]")
+    log_this(f"Running for {user_set_length} users, indexes [{user_set_start_idx} -> {user_set_start_idx + user_set_length}]")
 
-    with concurrent.futures.ProcessPoolExecutor(10, max_tasks_per_child=10) as executor:
+    with concurrent.futures.ThreadPoolExecutor(user_set_length) as executor:
         futures = [executor.submit(run_on_user, user_id, mongo_db) for user_id in user_ids]
         concurrent.futures.wait(futures)
 
