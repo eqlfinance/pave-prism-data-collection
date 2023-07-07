@@ -173,7 +173,7 @@ def handle_pave_request(
 
     if res_code == 429: # Rate limit!
         sleep = 1 if last_wait == 0 else last_wait * 2
-        log_this(f"Request limit reached, waiting {sleep} seconds", "error")
+        log_this(f"Request limit reached, waiting {sleep} seconds to call {method} {endpoint}", "error")
         time.sleep(sleep)
         return handle_pave_request(
             user_id, method, endpoint, payload, headers, params, sleep
