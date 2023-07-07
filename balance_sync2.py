@@ -60,7 +60,7 @@ def run_on_user(user_id, mongo_db):
     log_this(f'**** {user_id} Balance Sync took: {end-start} ****')
 
 def main():
-    handler = RotatingFileHandler(f'{home_path}daily-balance-data-sync.log', 'a+', (1000**2)*200, 2)
+    handler = RotatingFileHandler(f'{home_path}/logs/daily-balance-data-sync.log', 'a+', (1000**2)*200, 2)
     handler.setFormatter(formatter)
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
