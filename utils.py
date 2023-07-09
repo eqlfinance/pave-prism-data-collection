@@ -22,7 +22,7 @@ from google.cloud import secretmanager
 logger = logging.getLogger("stevenslav2")
 logger.setLevel(logging.DEBUG)
 
-home_path = "/home/langston/pave-prism/"
+home_path = "./"
 counters = None
 
 # Get the counters data. This allows for runing on smaller sets of users
@@ -118,7 +118,9 @@ def get_pymongo_connection() -> pymongo.MongoClient:
 
 def close_pymongo_connection():
     global current_mongo_connection
-    if current_mongo_connection: current_mongo_connection.close()
+    if current_mongo_connection: 
+        current_mongo_connection.close()
+        current_mongo_connection = None
 
 current_backend_connection:sqlalchemy.engine.Connection = None
 def get_backend_connection() -> sqlalchemy.engine.Connection:
@@ -131,7 +133,9 @@ def get_backend_connection() -> sqlalchemy.engine.Connection:
 
 def close_backend_connection():
     global current_backend_connection
-    if current_backend_connection: current_backend_connection.close()
+    if current_backend_connection: 
+        current_backend_connection.close()
+        current_backend_connection = None
 
 def log_this(message:str, severity:str = "debug"):
     # Logging to a local file and gcloud
@@ -199,7 +203,7 @@ def insert_response_into_db(
                 {
                     response_column_name: res.json(),
                     "user_id": user_id,
-                    "response_code": res.status_code, #depriciated 
+                    "response_code": res.status_code, #depriciated
                     "date": datetime.datetime.now(),
                 },
                 upsert=True
@@ -212,7 +216,7 @@ def insert_response_into_db(
             # Most likely a validation error happened
             log_this(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}", "error")
             log_this(f"{e}", "error")
-    else: 
+    else:
         # No insertion when response code is 400. There was probably a plaid error that prevented
         # user data from going to Pave so the request to Pave API did not work
         log_this("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()), "warning")

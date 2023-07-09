@@ -91,7 +91,7 @@ def run_on_user(user_id):
     end = datetime.datetime.now()
     print(f'{user_id} Insights Sync took: {end-start}')
 
-with concurrent.futures.ProcessPoolExecutor(10) as executor:
+with concurrent.futures.ThreadPoolExecutor(10) as executor:
     futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
     done, incomplete = concurrent.futures.wait(futures)
     log_this(f"Insights sync: Ran on {len(done)}/{len(user_ids)} users ({len(incomplete)} incomplete)")
