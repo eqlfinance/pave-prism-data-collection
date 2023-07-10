@@ -2,15 +2,15 @@ from utils import *
 
 def run_on_user(user_id):
     mongo_collection = get_pymongo_connection()[pave_table]["balances2"]
-    
-    start = datetime.datetime.now()
+
+    start = now()
     log_this(f"**** Running Balance Sync for {user_id=} ({start}) ****")
 
     num_balance_days = 90
     start_date_str = (
-        datetime.datetime.now() - datetime.timedelta(days=num_balance_days)
+        now() - datetime.timedelta(days=num_balance_days)
     ).strftime("%Y-%m-%d")
-    end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
+    end_date_str: str = now().strftime("%Y-%m-%d")
     params = {"start_date": start_date_str, "end_date": end_date_str}
 
     # Get the balance data from Pave API
@@ -31,7 +31,7 @@ def run_on_user(user_id):
 
             bulk_writes = []
             account_ids = []
-            ab_processing = datetime.datetime.now()
+            ab_processing = now()
             for balance_obj in accounts_balances:
                 # The object that stores the combined set of past mongo balances and current Pave API
                 # this allows balances in the past {num_balance_days} to be updated
@@ -46,18 +46,19 @@ def run_on_user(user_id):
 
                     bulk_writes.append(pymongo.ReplaceOne({"user_id": user_id, "account_id": account_id, "date": balance['date']}, replacement=balance, upsert=True))
 
-            update_timer = datetime.datetime.now()
+            update_timer = now()
             mongo_collection.bulk_write(bulk_writes)
-            update_timer2 = datetime.datetime.now()
+            update_timer2 = now()
             log_this(f"    {user_id=} bulk writes to balances took {update_timer2-update_timer}, accounts balances processing took {update_timer-ab_processing}: {account_ids=}")
         except Exception as e: # This indicates a validation error
             log_this(f"MONGO DB OR OTHER ERROR ON USER {user_id} ON DAILY SYNC", "error")
-            logger.exception(e)
+            log_this("\n".join(traceback.format_exception(e)), "error")
+            
     else:
         # This happens if the GET balances call to Pave API fails for whatever reason
         log_this(f"        {user_id}: balances call failed for date range {start_date_str}-{end_date_str}", "warning")
 
-    end = datetime.datetime.now()
+    end = now()
     log_this(f'**** {user_id} Balance Sync took: {end-start} ****')
 
 def main():
@@ -66,9 +67,9 @@ def main():
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
 
-    process_start = datetime.datetime.now()
+    process_start = now()
 
-    log_this(f"Runinng Balance Sync Process start: {process_start}", "info")
+    log_this(f"Runinng Balance Sync Process start: {process_start}", "warning")
 
     conn = get_backend_connection()
     #mongo_db = get_pymongo_connection()[pave_table]
@@ -90,7 +91,7 @@ def main():
     user_set_length = len(rows) // balance_sync_user_set_divisor
     user_set_start_idx = int((len(rows) * balance_sync_counter)/balance_sync_user_set_divisor)
     user_ids = [str(row[0]) for row in rows[user_set_start_idx : user_set_start_idx + user_set_length]]
-    log_this(f"Running for {user_set_length} users, indexes [{user_set_start_idx} -> {user_set_start_idx + user_set_length}]")
+    log_this(f"Running for {user_set_length} users, indexes [{user_set_start_idx} -> {user_set_start_idx + user_set_length}] (ORDER BY ASC)", 'warning')
 
     with concurrent.futures.ThreadPoolExecutor(user_set_length) as executor:
         futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
@@ -99,8 +100,12 @@ def main():
     close_backend_connection()
     close_pymongo_connection()
 
-    process_end = datetime.datetime.now()
-    log_this(f"Balance Sync {user_set_length} users: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")
+    process_end = now()
+    log_this(f"Balance Sync {user_set_length} users: {process_start} -> {process_end} | Total run time: {process_end-process_start}", "warning")
+    log_this("\n\n\n")
+    flush_log_buffer()
+
+
 
 
 if __name__ == "__main__":

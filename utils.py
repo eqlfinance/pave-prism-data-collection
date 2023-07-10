@@ -4,6 +4,7 @@ import json
 import logging
 import subprocess
 import time
+from typing import List, Tuple
 import uuid
 import pymongo
 import requests
@@ -13,6 +14,7 @@ import concurrent.futures
 import os
 from logging.handlers import RotatingFileHandler
 from cryptography.fernet import Fernet, MultiFernet
+import traceback
 
 from google.cloud.sql.connector import Connector
 from google.oauth2 import service_account
@@ -118,7 +120,7 @@ def get_pymongo_connection() -> pymongo.MongoClient:
 
 def close_pymongo_connection():
     global current_mongo_connection
-    if current_mongo_connection: 
+    if current_mongo_connection:
         current_mongo_connection.close()
         current_mongo_connection = None
 
@@ -133,15 +135,34 @@ def get_backend_connection() -> sqlalchemy.engine.Connection:
 
 def close_backend_connection():
     global current_backend_connection
-    if current_backend_connection: 
+    if current_backend_connection:
         current_backend_connection.close()
         current_backend_connection = None
 
+log_buffer:List[Tuple[str, str]] = []
 def log_this(message:str, severity:str = "debug"):
     # Logging to a local file and gcloud
-    global logger
-    logger.log(logging._nameToLevel[severity.upper()], message)
-    subprocess.run(["gcloud", "logging", "write", "stevenslav", message, f"--severity={severity.upper()}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
+    global logger, log_buffer
+    log_buffer.append((severity.upper(), message))
+
+    # Arbitrary amount, subject to change
+    if len(log_buffer) > 250:
+        flush_log_buffer()
+
+def flush_log_buffer():
+    global log_buffer
+
+    log_timer = now()
+    for log in log_buffer:
+        logger.log(logging._nameToLevel[log[0]], log[1])
+
+        if log[0] in ["ERROR", "WARNING"]:
+            subprocess.run(["gcloud", "logging", "write", "stevenslav", log[1], f"--severity={log[0]}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
+    log_timer_end = now()
+    logger.debug(f"Logs flush took {log_timer_end-log_timer}")
+
+
+    log_buffer.clear()
 
 def base64_decode(val: str) -> bytes:
     return base64.urlsafe_b64decode(val.encode("ascii"))
@@ -165,7 +186,7 @@ def handle_pave_request(
     params: dict,
     last_wait: float = 0,
 ) -> requests.Response:
-    request_timer = datetime.datetime.now()
+    request_timer = now()
 
     method = method.upper().strip()
     if method in ["GET", "POST"]:
@@ -183,8 +204,8 @@ def handle_pave_request(
             user_id, method, endpoint, payload, headers, params, sleep
         )
     else:
-        request_timer_end = datetime.datetime.now()
-        log_this(f"\t[Response {res_code}] {method.upper()} {endpoint} took: {request_timer_end-request_timer}", "info")
+        request_timer_end = now()
+        log_this(f"    [Response {res_code}] {method.upper()} {endpoint} took: {request_timer_end-request_timer}", "info")
 
         return res
 
@@ -192,7 +213,7 @@ def insert_response_into_db(
     user_id: str, res, mongo_db, collection_name: str, response_column_name: str
 ):
     log_this("Inserting response into: {}.{}".format(collection_name, response_column_name), "info")
-    mongo_timer = datetime.datetime.now()
+    mongo_timer = now()
     mongo_collection = mongo_db[collection_name]
     res_code = res.status_code
 
@@ -204,7 +225,7 @@ def insert_response_into_db(
                     response_column_name: res.json(),
                     "user_id": user_id,
                     "response_code": res.status_code, #depriciated
-                    "date": datetime.datetime.now(),
+                    "date": now(),
                 },
                 upsert=True
             )
@@ -215,11 +236,15 @@ def insert_response_into_db(
         except Exception as e:
             # Most likely a validation error happened
             log_this(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}", "error")
-            log_this(f"{e}", "error")
+            log_this("\n".join(traceback.format_exception(e)), "error")
     else:
         # No insertion when response code is 400. There was probably a plaid error that prevented
         # user data from going to Pave so the request to Pave API did not work
-        log_this("\tCan't insert to {}: {} {}\n".format(collection_name, res_code, res.json()), "warning")
+        log_this(f"    {user_id} Can't insert to {collection_name}: {res.json()}", "warning")
 
-    mongo_timer_end = datetime.datetime.now()
-    log_this(f"DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}\n", "warning")
+    mongo_timer_end = now()
+    log_this(f"{user_id} DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}\n", "warning")
+
+
+def now():
+    return datetime.datetime.now()
