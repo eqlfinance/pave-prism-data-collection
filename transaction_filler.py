@@ -23,7 +23,7 @@ def main():
     conn = get_backend_connection()
 
     rows = conn.execute(
-        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE created_at >= ((NOW() - INTERVAL '30 minutes') OR last_validated_at >= (NOW() - INTERVAL '3 days')) AND status = 'active'"
+        "SELECT DISTINCT access_token, user_id FROM public.plaid_links WHERE (created_at >= (NOW() - INTERVAL '30 minutes') OR last_validated_at >= (NOW() - INTERVAL '3 days')) AND status = 'active'"
     ).fetchall()
     
     with concurrent.futures.ThreadPoolExecutor(10) as executor:
