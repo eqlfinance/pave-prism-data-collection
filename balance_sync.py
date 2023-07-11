@@ -53,7 +53,7 @@ def run_on_user(user_id):
         except Exception as e: # This indicates a validation error
             log_this(f"MONGO DB OR OTHER ERROR ON USER {user_id} ON DAILY SYNC", "error")
             log_this("\n".join(traceback.format_exception(e)), "error")
-            
+
     else:
         # This happens if the GET balances call to Pave API fails for whatever reason
         log_this(f"        {user_id}: balances call failed for date range {start_date_str}-{end_date_str}", "warning")
@@ -62,7 +62,7 @@ def run_on_user(user_id):
     log_this(f'**** {user_id} Balance Sync took: {end-start} ****')
 
 def main():
-    handler = RotatingFileHandler(f'{home_path}daily-balance-data-sync.log', 'a+', (1000**2)*200, 2)
+    handler = RotatingFileHandler(f'{logs_path}daily-balance-data-sync.log', 'a+', (1000**2)*200, 2)
     handler.setFormatter(formatter)
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)

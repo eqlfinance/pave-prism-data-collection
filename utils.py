@@ -20,14 +20,39 @@ from google.cloud.sql.connector import Connector
 from google.oauth2 import service_account
 from google.cloud import secretmanager
 
+# Logging
+proc_id = str(uuid.uuid4())[:8]
+formatter = logging.Formatter(f'{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s', datefmt='%m-%d %H:%M:%S')
 
 logger = logging.getLogger("stevenslav2")
 logger.setLevel(logging.DEBUG)
 
-home_path = "./"
-counters = None
+home_path = "/home/langston/pave-prism/"
+logs_path = f"{home_path}logs/"
+
+log_buffer:List[Tuple[str, str]] = []
+def log_this(message:str, severity:str = "debug"):
+    # Logging to a local file and gcloud
+    global logger, log_buffer
+    log_buffer.append((severity.upper(), message))
+
+def flush_log_buffer():
+    global log_buffer
+
+    log_timer = now()
+    for log in log_buffer:
+        logger.log(logging._nameToLevel[log[0]], log[1])
+
+        if log[0] in ["ERROR", "WARNING"]:
+            subprocess.run(["gcloud", "logging", "write", "stevenslav", log[1], f"--severity={log[0]}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
+    log_timer_end = now()
+    logger.debug(f"Logs flush took {log_timer_end-log_timer}")
+
+    log_buffer.clear()
+
 
 # Get the counters data. This allows for runing on smaller sets of users
+counters = None
 if not os.path.isfile(f"{home_path}counters.json"):
     with open(f'{home_path}counters.json', 'w') as file:
         default_counter_values = {"balance_sync_counter": 0,"balance_sync_usd": 6}
@@ -38,13 +63,6 @@ if counters is None:
     with open(f'{home_path}counters.json', 'r') as file:
         counters = json.load(file)
 
-proc_id = str(uuid.uuid4())[:8]
-formatter = logging.Formatter(f'{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s', datefmt='%m-%d %H:%M:%S')
-
-normal_log_handler = RotatingFileHandler(f'{home_path}stevenslav2.log', 'a+', 1000**3, 2)
-normal_log_handler.setFormatter(formatter)
-normal_log_handler.setLevel(logging.DEBUG)
-logger.addHandler(normal_log_handler)
 
 # Get secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
@@ -139,31 +157,7 @@ def close_backend_connection():
         current_backend_connection.close()
         current_backend_connection = None
 
-log_buffer:List[Tuple[str, str]] = []
-def log_this(message:str, severity:str = "debug"):
-    # Logging to a local file and gcloud
-    global logger, log_buffer
-    log_buffer.append((severity.upper(), message))
-
-    # Arbitrary amount, subject to change
-    if len(log_buffer) > 250:
-        flush_log_buffer()
-
-def flush_log_buffer():
-    global log_buffer
-
-    log_timer = now()
-    for log in log_buffer:
-        logger.log(logging._nameToLevel[log[0]], log[1])
-
-        if log[0] in ["ERROR", "WARNING"]:
-            subprocess.run(["gcloud", "logging", "write", "stevenslav", log[1], f"--severity={log[0]}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
-    log_timer_end = now()
-    logger.debug(f"Logs flush took {log_timer_end-log_timer}")
-
-
-    log_buffer.clear()
-
+# Decryption
 def base64_decode(val: str) -> bytes:
     return base64.urlsafe_b64decode(val.encode("ascii"))
 
@@ -176,7 +170,7 @@ def decrypt(val: str) -> str:
     actual = fernet.decrypt(base64_decode(val))
     return actual.decode()
 
-
+# Common handler of requests to Pave API
 def handle_pave_request(
     user_id: str,
     method: str,

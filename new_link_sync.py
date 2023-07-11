@@ -122,7 +122,7 @@ def run_on_user(at_uid):
     log_this(f'**** {user_id} Balance Sync took: {end-start} ****')
 
 def main():
-    handler = RotatingFileHandler(f'{home_path}new-link-data-sync.log', 'a', (1000**2)*200, 2)
+    handler = RotatingFileHandler(f'{logs_path}new-link-data-sync.log', 'a', (1000**2)*200, 2)
     handler.setFormatter(formatter)
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)

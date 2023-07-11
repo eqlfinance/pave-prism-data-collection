@@ -15,6 +15,11 @@ def run_on_user(at_uid):
     log_this(f"  Pave Agent res code: {res.status_code}, took {pave_agent_end-pave_agent_start} | {res.json()=}")
 
 def main():
+    handler = RotatingFileHandler(f'{logs_path}transaction_filler.log', 'a+', (1000**2)*200, 2)
+    handler.setFormatter(formatter)
+    handler.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+
     process_start = now()
 
     log_this(f"Runinng Transaction Filler Process start: {process_start}\n", "info")

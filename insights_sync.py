@@ -1,6 +1,6 @@
 from utils import *
 
-handler = RotatingFileHandler(f'{home_path}logs/weekly-recurring-data-sync.log', 'a', (1000**2)*200, 2)
+handler = RotatingFileHandler(f'{logs_path}weekly-recurring-data-sync.log', 'a', (1000**2)*200, 2)
 handler.setFormatter(formatter)
 handler.setLevel(logging.DEBUG)
 logger.addHandler(handler)
