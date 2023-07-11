@@ -6,7 +6,7 @@ def run_on_user(at_uid):
     at_uid = at_uid._asdict()
     access_token, user_id = decrypt(at_uid["access_token"]), str(at_uid["user_id"])
 
-    start = datetime.datetime.now()
+    start = now()
     log_this(f"**** Running new link sync for {user_id=} ****")
     time_in_days = 365 * 2
 
@@ -21,9 +21,9 @@ def run_on_user(at_uid):
 
     # Date ranges for pave
     start_date_str = (
-        datetime.datetime.now() - datetime.timedelta(days=time_in_days)
+        now() - datetime.timedelta(days=time_in_days)
     ).strftime("%Y-%m-%d")
-    end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
+    end_date_str: str = now().strftime("%Y-%m-%d")
     params = {"start_date": start_date_str, "end_date": end_date_str}
 
     # Store the transaction data from pave
@@ -37,34 +37,34 @@ def run_on_user(at_uid):
     )
 
     if response.status_code != 200:
-        log_this("        Non 200 return code on transactions", "exception")
+        log_this(f"        Could not get {user_id} transactions")
     else:
-        mongo_timer = datetime.datetime.now()
+        mongo_timer = now()
         mongo_collection = mongo_db["transactions"]
         transactions = response.json()["transactions"]
 
         if len(transactions) > 0:
-            log_this(f"   Inserting {json.dumps(transactions)[:200]}... into transactions", "info")
+            log_this(f"   Inserting {len(transactions)} transactions for user {user_id}", "info")
 
             try:
                 mongo_collection.update_one(
                     {"user_id": str(user_id)},
                     {
                         "$addToSet": {"transactions.transactions": {"$each": transactions}},
-                        "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
+                        "$set": {"transactions.to": end_date_str, "date": now()}
                     }
                 )
             except Exception as e:
                 log_this(f"        COULD NOT UPDATE TRANSACTIONS FOR USER {user_id} ON LINK SYNC", "error")
-                log_this(f"        {e}", "error")
+                log_this(f"        {''.join(traceback.format_exception(e))}", "error")
 
-            mongo_timer_end = datetime.datetime.now()
+            mongo_timer_end = now()
             log_this(f"      Transaction insertion took: {mongo_timer_end-mongo_timer}", "info")
 
             transaction_date_str = transactions[len(transactions)-1]["date"]
             params["start_date"] = transaction_date_str
         else:
-            log_this("\tGot to new link transaction db insertion but no transactions were found for the date range", "warning")
+            log_this("\tGot to new link transaction db insertion but no transactions were found for the date range")
 
     #####################################################################
 
@@ -79,9 +79,9 @@ def run_on_user(at_uid):
     )
 
     if response.status_code != 200:
-        log_this(f"    Balance Get for {user_id} failed", "exception")
+        log_this(f"    Balance Get for {user_id} failed")
     else:
-        mongo_timer = datetime.datetime.now()
+        mongo_timer = now()
         mongo_collection = mongo_db["balances2"]
 
         log_this(f"    Moving account data for {user_id}'s accounts {[x['account_id'] for x in balance_obj['accounts_balances']]} into balances", "info")
@@ -92,7 +92,7 @@ def run_on_user(at_uid):
 
             bulk_writes = []
             account_ids = []
-            ab_processing = datetime.datetime.now()
+            ab_processing = now()
             for balance_obj in accounts_balances:
                 # The object that stores the combined set of past mongo balances and current Pave API
                 # this allows balances in the past {num_balance_days} to be updated
@@ -107,18 +107,18 @@ def run_on_user(at_uid):
 
                     bulk_writes.append(pymongo.ReplaceOne({"user_id": user_id, "account_id": account_id, "date": balance['date']}, replacement=balance, upsert=True))
 
-            update_timer = datetime.datetime.now()
+            update_timer = now()
             mongo_collection.bulk_write(bulk_writes)
-            update_timer2 = datetime.datetime.now()
+            update_timer2 = now()
             log_this(f"    {user_id=} bulk writes to balances took {update_timer2-update_timer}, accounts balances processing took {update_timer-ab_processing}: {account_ids=}")
         except Exception as e:
             log_this(f"    COULD NOT UPDATE BALANCES FOR USER {user_id} ON LINK SYNC", "error")
-            log_this(f"    {e}", "error")
+            log_this("\n".join(traceback.format_exception(e)), "error")
 
-        mongo_timer_end = datetime.datetime.now()
+        mongo_timer_end = now()
         log_this(f"    {user_id} Balance insertion took: {mongo_timer_end-mongo_timer}", "info")
-        
-    end = datetime.datetime.now()
+
+    end = now()
     log_this(f'**** {user_id} Balance Sync took: {end-start} ****')
 
 def main():
@@ -127,9 +127,9 @@ def main():
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
 
-    process_start = datetime.datetime.now()
+    process_start = now()
 
-    log_this(f"Runinng new link sync Process start: {process_start}\n", "info")
+    log_this(f"Runinng new link sync Process start: {process_start}\n", "warning")
 
     # Open connections
     conn = get_backend_connection()
@@ -141,13 +141,15 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(10) as executor:
         futures = [executor.submit(run_on_user, row) for row in rows]
         done, incomplete = concurrent.futures.wait(futures)
-        log_this(f"New Links Sync sync: Ran on {len(done)}/{len(rows)} users ({len(incomplete)} incomplete)")
+        log_this(f"New Links Sync sync: Ran on {len(done)}/{len(rows)} users ({len(incomplete)} incomplete)", "warning")
 
     close_backend_connection()
     close_pymongo_connection()
 
-    process_end = datetime.datetime.now()
-    log_this(f"New Links Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")
+    process_end = now()
+    log_this(f"New Links Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}", "warning")
+    log_this("\n\n\n")
+    flush_log_buffer()
 
 if __name__ == "__main__":
     main()

@@ -5,30 +5,30 @@ handler.setFormatter(formatter)
 handler.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
-process_start = datetime.datetime.now()
+process_start = now()
 
-log_this(f"Runinng Unified Insights Sync Process start: {process_start}", "info")
+log_this(f"Runinng Unified Insights Sync Process start: {process_start}", "warning")
 
 # Open connections
 conn = get_backend_connection()
 mongo_db = get_pymongo_connection()[pave_table]
 
 rows = conn.execute(
-    "SELECT DISTINCT id FROM public.users"
+    "SELECT DISTINCT id FROM public.users ORDER BY id ASC"
 ).fetchall()
 
 user_ids = [str(row[0]) for row in rows]
 
 # Date ranges for pave, set for 2 years subject to change
 start_date_str = (
-    datetime.datetime.now() - datetime.timedelta(days=365*2)
+    now() - datetime.timedelta(days=365*2)
 ).strftime("%Y-%m-%d")
-end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
+end_date_str: str = now().strftime("%Y-%m-%d")
 params = {"start_date": start_date_str, "end_date": end_date_str}
 
 # Get all users unified insight data
 def run_on_user(user_id):
-    start = datetime.datetime.now()
+    start = now()
     log_this(f"Running Insights sync for {user_id=}")
 
     # Store the unified insights data from pave
@@ -59,15 +59,15 @@ def run_on_user(user_id):
                         title: object,
                         "user_id": user_id,
                         "response_code": response.status_code,
-                        "date": datetime.datetime.now(),
+                        "date": now(),
                     },
                     upsert=True,
                 )
             except Exception as e:
                 log_this(f"COULD NOT UPDATE {title} FOR USER {user_id} ON DAILY SYNC", "error")
-                log_this(f"{e}", "error")
+                log_this(f"\n".join(traceback.format_exception(e)), "error")
     else:
-        log_this("\tCan't insert: {} {}\n".format(response.status_code, response.json()), "warning")
+        log_this(f"    Unified Insights Get for {user_id} failed {response.json()}")
     #####################################################################
 
     # We may actually want this data for decisioning so we can take the slowdown
@@ -88,16 +88,18 @@ def run_on_user(user_id):
         collection_name="attributes",
         response_column_name="attributes",
     )
-    end = datetime.datetime.now()
+    end = now()
     print(f'{user_id} Insights Sync took: {end-start}')
 
 with concurrent.futures.ThreadPoolExecutor(10) as executor:
     futures = [executor.submit(run_on_user, user_id) for user_id in user_ids]
     done, incomplete = concurrent.futures.wait(futures)
-    log_this(f"Insights sync: Ran on {len(done)}/{len(user_ids)} users ({len(incomplete)} incomplete)")
+    log_this(f"Insights sync: Ran on {len(done)}/{len(user_ids)} users ({len(incomplete)} incomplete)", 'warning')
 
 close_backend_connection()
 close_pymongo_connection()
 
-process_end = datetime.datetime.now()
-log_this(f"Unified Insights Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")
+process_end = now()
+log_this(f"Unified Insights Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}", "warning")
+log_this("\n\n\n")
+flush_log_buffer()
