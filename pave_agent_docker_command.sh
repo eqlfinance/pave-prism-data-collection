@@ -5,4 +5,4 @@
 
 sudo docker kill pave-agent
 sudo docker rm pave-agent
-sudo docker run -d --name pave-agent --env-file /home/langston/pave-prism/pave-agent.env -p 8123:8000 docker.io/pavedev/agent:latest
+sudo docker run -d --name pave-agent --env-file ./pave-agent.env -p 8123:8000 docker.io/pavedev/agent:latest

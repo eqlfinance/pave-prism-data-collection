@@ -20,31 +20,53 @@ from google.cloud.sql.connector import Connector
 from google.oauth2 import service_account
 from google.cloud import secretmanager
 
+# Logging
+proc_id = str(uuid.uuid4())[:8]
+formatter = logging.Formatter(
+    f"{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s", datefmt="%m-%d %H:%M:%S"
+)
 
 logger = logging.getLogger("stevenslav2")
 logger.setLevel(logging.DEBUG)
 
 home_path = "./"
-counters = None
+logs_path = f"{home_path}logs/"
+log_buffer: List[Tuple[str, str]] = []
+
+
+def log_this(message: str, severity: str = "debug"):
+    # Logging to a local file and gcloud
+    global logger, log_buffer
+    log_buffer.append((severity.upper(), message))
+
+
+def flush_log_buffer():
+    global log_buffer
+
+    log_timer = now()
+    for log in log_buffer:
+        logger.log(logging._nameToLevel[log[0]], log[1])
+
+        if log[0] in ["ERROR", "WARNING"]:
+            subprocess.run(["gcloud", "logging", "write", "stevenslav", log[1], f"--severity={log[0]}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
+    log_timer_end = now()
+    logger.debug(f"Logs flush took {log_timer_end-log_timer}")
+
+    log_buffer.clear()
+
 
 # Get the counters data. This allows for runing on smaller sets of users
+counters = None
 if not os.path.isfile(f"{home_path}counters.json"):
-    with open(f'{home_path}counters.json', 'w') as file:
-        default_counter_values = {"balance_sync_counter": 0,"balance_sync_usd": 6}
+    with open(f"{home_path}counters.json", "w") as file:
+        default_counter_values = {"balance_sync_counter": 0, "balance_sync_usd": 6}
         json.dump(default_counter_values, file)
         counters = default_counter_values
 
 if counters is None:
-    with open(f'{home_path}counters.json', 'r') as file:
+    with open(f"{home_path}counters.json", "r") as file:
         counters = json.load(file)
 
-proc_id = str(uuid.uuid4())[:8]
-formatter = logging.Formatter(f'{proc_id} [%(levelname)s] @ %(asctime)s: %(message)s', datefmt='%m-%d %H:%M:%S')
-
-normal_log_handler = RotatingFileHandler(f'{home_path}stevenslav2.log', 'a+', 1000**3, 2)
-normal_log_handler.setFormatter(formatter)
-normal_log_handler.setLevel(logging.DEBUG)
-logger.addHandler(normal_log_handler)
 
 # Get secret values
 secret_manager_client = secretmanager.SecretManagerServiceClient()
@@ -87,6 +109,7 @@ db_params_obj = json.loads(DB_PARAMS)
 g_credentials = service_account.Credentials.from_service_account_info(creds_obj)
 instance_connection_name = f"{db_params_obj['PROJECT_ID']}:{db_params_obj['REGION']}:{db_params_obj['INSTANCE_NAME']}"
 
+
 def get_psql_connection():
     global g_credentials, instance_connection_name, db_params_obj
 
@@ -101,6 +124,7 @@ def get_psql_connection():
 
     return conn
 
+
 postgres_pool = sqlalchemy.create_engine(
     "postgresql+pg8000://", creator=get_psql_connection
 )
@@ -109,14 +133,18 @@ mongodb_uri = client.access_secret_version(
     name=f"projects/eql-data-processing/secrets/mongodb-uri/versions/latest"
 ).payload.data.decode("UTF-8")
 
-current_mongo_connection:pymongo.MongoClient = None
+current_mongo_connection: pymongo.MongoClient = None
+
+
 def get_pymongo_connection() -> pymongo.MongoClient:
     global current_mongo_connection
 
-    if current_mongo_connection: return current_mongo_connection
+    if current_mongo_connection:
+        return current_mongo_connection
     else:
         current_mongo_connection = pymongo.MongoClient(mongodb_uri)
         return current_mongo_connection
+
 
 def close_pymongo_connection():
     global current_mongo_connection
@@ -124,14 +152,19 @@ def close_pymongo_connection():
         current_mongo_connection.close()
         current_mongo_connection = None
 
-current_backend_connection:sqlalchemy.engine.Connection = None
+
+current_backend_connection: sqlalchemy.engine.Connection = None
+
+
 def get_backend_connection() -> sqlalchemy.engine.Connection:
     global current_backend_connection
 
-    if current_backend_connection: return current_backend_connection
+    if current_backend_connection:
+        return current_backend_connection
     else:
         current_backend_connection = postgres_pool.connect()
         return current_backend_connection
+
 
 def close_backend_connection():
     global current_backend_connection
@@ -139,31 +172,8 @@ def close_backend_connection():
         current_backend_connection.close()
         current_backend_connection = None
 
-log_buffer:List[Tuple[str, str]] = []
-def log_this(message:str, severity:str = "debug"):
-    # Logging to a local file and gcloud
-    global logger, log_buffer
-    log_buffer.append((severity.upper(), message))
 
-    # Arbitrary amount, subject to change
-    if len(log_buffer) > 250:
-        flush_log_buffer()
-
-def flush_log_buffer():
-    global log_buffer
-
-    log_timer = now()
-    for log in log_buffer:
-        logger.log(logging._nameToLevel[log[0]], log[1])
-
-        if log[0] in ["ERROR", "WARNING"]:
-            subprocess.run(["gcloud", "logging", "write", "stevenslav", log[1], f"--severity={log[0]}", "--quiet", "--verbosity=none", "--no-user-output-enabled"], stdout=subprocess.PIPE)
-    log_timer_end = now()
-    logger.debug(f"Logs flush took {log_timer_end-log_timer}")
-
-
-    log_buffer.clear()
-
+# Decryption
 def base64_decode(val: str) -> bytes:
     return base64.urlsafe_b64decode(val.encode("ascii"))
 
@@ -177,6 +187,7 @@ def decrypt(val: str) -> str:
     return actual.decode()
 
 
+# Common handler of requests to Pave API
 def handle_pave_request(
     user_id: str,
     method: str,
@@ -190,29 +201,41 @@ def handle_pave_request(
 
     method = method.upper().strip()
     if method in ["GET", "POST"]:
-        res = requests.request(method, f"{endpoint}", json=payload, headers=headers, params=params)
+        res = requests.request(
+            method, f"{endpoint}", json=payload, headers=headers, params=params
+        )
     else:
         raise ValueError("Method not understood {}".format(method))
 
     res_code = res.status_code
 
-    if res_code == 429: # Rate limit!
+    if res_code == 429:  # Rate limit!
         sleep = 1 if last_wait == 0 else last_wait * 2
-        log_this(f"Request limit reached, waiting {sleep} seconds to call {method} {endpoint}", "error")
+        log_this(
+            f"Request limit reached, waiting {sleep} seconds to call {method} {endpoint}",
+            "error"
+        )
         time.sleep(sleep)
         return handle_pave_request(
             user_id, method, endpoint, payload, headers, params, sleep
         )
     else:
         request_timer_end = now()
-        log_this(f"    [Response {res_code}] {method.upper()} {endpoint} took: {request_timer_end-request_timer}", "info")
+        log_this(
+            f"    [Response {res_code}] {method.upper()} {endpoint} took: {request_timer_end-request_timer}",
+            "info"
+        )
 
         return res
+
 
 def insert_response_into_db(
     user_id: str, res, mongo_db, collection_name: str, response_column_name: str
 ):
-    log_this("Inserting response into: {}.{}".format(collection_name, response_column_name), "info")
+    log_this(
+        "Inserting response into: {}.{}".format(collection_name, response_column_name),
+        "info"
+    )
     mongo_timer = now()
     mongo_collection = mongo_db[collection_name]
     res_code = res.status_code
@@ -224,26 +247,40 @@ def insert_response_into_db(
                 {
                     response_column_name: res.json(),
                     "user_id": user_id,
-                    "response_code": res.status_code, #depriciated
+                    "response_code": res.status_code,  # depriciated
                     "date": now(),
                 },
-                upsert=True
+                upsert=True,
             )
 
-            log_this(f"        {res.matched_count=} {res.modified_count=} {res.upserted_id=}")
-            if res.matched_count == 0 and res.modified_count == 0 and res.upserted_id == None:
+            log_this(
+                f"        {res.matched_count=} {res.modified_count=} {res.upserted_id=}"
+            )
+            if (
+                res.matched_count == 0
+                and res.modified_count == 0
+                and res.upserted_id == None
+            ):
                 raise Exception("Impossible case")
         except Exception as e:
             # Most likely a validation error happened
-            log_this(f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}", "error")
+            log_this(
+                f"COULD NOT INSERT response into {response_column_name} FOR USER {user_id}",
+                "error"
+            )
             log_this("\n".join(traceback.format_exception(e)), "error")
     else:
         # No insertion when response code is 400. There was probably a plaid error that prevented
         # user data from going to Pave so the request to Pave API did not work
-        log_this(f"    {user_id} Can't insert to {collection_name}: {res.json()}", "warning")
+        log_this(
+            f"    {user_id} Can't insert to {collection_name}: {res.json()}", "warning"
+        )
 
     mongo_timer_end = now()
-    log_this(f"{user_id} DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}\n", "warning")
+    log_this(
+        f"{user_id} DB insertion to {collection_name} took: {mongo_timer_end-mongo_timer}\n",
+        "warning"
+    )
 
 
 def now():

@@ -1,8 +1,9 @@
 cryptography==38.0.3
-protobuf==4.21.11
+numpy==1.24.3
+protobuf==4.23.4
 pymongo==4.3.2
-python-dotenv==0.21.0
-requests==2.27.1
+python-dotenv==1.0.0
+Requests==2.31.0
 SQLAlchemy==1.4.43
 cloud-sql-python-connector==1.0.0
 google-cloud-secret-manager==2.12.6
