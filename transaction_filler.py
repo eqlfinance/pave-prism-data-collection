@@ -1,5 +1,6 @@
 from utils import *
 
+
 def run_on_user(at_uid):
     at_uid = at_uid._asdict()
     access_token, user_id = decrypt(at_uid["access_token"]), str(at_uid["user_id"])
@@ -12,10 +13,15 @@ def run_on_user(at_uid):
         json={"access_token": f"{access_token}"},
     )
     pave_agent_end = now()
-    log_this(f"  Pave Agent res code: {res.status_code}, took {pave_agent_end-pave_agent_start} | {res.json()=}")
+    log_this(
+        f"  Pave Agent res code: {res.status_code}, took {pave_agent_end-pave_agent_start} | {res.json()=}"
+    )
+
 
 def main():
-    handler = RotatingFileHandler(f'{logs_path}transaction_filler.log', 'a+', (1000**2)*200, 2)
+    handler = RotatingFileHandler(
+        f"{logs_path}transaction_filler.log", "a+", (1000**2) * 200, 2
+    )
     handler.setFormatter(formatter)
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
@@ -34,13 +40,20 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(10) as executor:
         futures = [executor.submit(run_on_user, row) for row in rows]
         done, incomplete = concurrent.futures.wait(futures)
-        log_this(f"Transaction Filler: Ran on {len(done)}/{len(rows)} users ({len(incomplete)} incomplete)")
+        log_this(
+            f"Transaction Filler: Ran on {len(done)}/{len(rows)} users ({len(incomplete)} incomplete)"
+        )
 
     close_backend_connection()
 
     process_end = now()
-    log_this(f"Transaction Filler: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")
+    log_this(
+        f"Transaction Filler: {process_start} -> {process_end} | Total run time: {process_end-process_start}",
+        "info"
+    )
     flush_log_buffer()
+    logger.info("\n\n\n")
+
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,11 @@
 from utils import *
 
-handler = RotatingFileHandler('/home/langston/pave-prism/logs/hourly-transaction-data-sync.log', 'a', (1000**2)*200, 2)
+handler = RotatingFileHandler(
+    "/home/langston/pave-prism/logs/hourly-transaction-data-sync.log",
+    "a",
+    (1000**2) * 200,
+    2,
+)
 handler.setFormatter(formatter)
 handler.setLevel(logging.DEBUG)
 logger.addHandler(handler)
@@ -18,15 +23,13 @@ rows = conn.execute(
 ).fetchall()
 
 for row in tqdm(rows):
-    row:dict = row._asdict()
+    row: dict = row._asdict()
     transaction = {
         "transaction_id": str(row["plaid_transaction_id"]),
         "account_id": str(row["plaid_account_id"]),
         "amount": float(row["amount"]),
         "date": str(row["authorized_date"]),
-        "memo": " ".join(
-            row["personal_finance_category"].values()
-        )
+        "memo": " ".join(row["personal_finance_category"].values())
         if row["personal_finance_category"]
         else "",
         "name": row["name"] if row["name"] else " ",
@@ -38,17 +41,23 @@ for row in tqdm(rows):
         "payment_channel": row["payment_channel"],
         "transaction_type": row["transaction_type"],
         "payment_meta": row["payment_meta"],
-        "location": row["location"]
+        "location": row["location"],
     }
 
-    user_id = conn.execute(f"SELECT user_id FROM public.plaid_links WHERE id = \'{str(row['link_id'])}\'").fetchone()[0]
+    user_id = conn.execute(
+        f"SELECT user_id FROM public.plaid_links WHERE id = '{str(row['link_id'])}'"
+    ).fetchone()[0]
 
     # Date ranges for pave
-    start_date_str = (
-        datetime.datetime.now() - datetime.timedelta(days=1)
-    ).strftime("%Y-%m-%d")
+    start_date_str = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime(
+        "%Y-%m-%d"
+    )
     end_date_str: str = datetime.datetime.now().strftime("%Y-%m-%d")
-    params = {"start_date": start_date_str, "end_date": end_date_str, "resolve_duplicates": True}
+    params = {
+        "start_date": start_date_str,
+        "end_date": end_date_str,
+        "resolve_duplicates": True,
+    }
 
     response = handle_pave_request(
         user_id=user_id,
@@ -77,20 +86,29 @@ for row in tqdm(rows):
         transactions = response.json()["transactions"]
 
         if len(transactions) > 0:
-            log_this(f"\tInserting {json.dumps(transactions)[:100]} into transactions", "info")
+            log_this(
+                f"\tInserting {json.dumps(transactions)[:100]} into transactions",
+                "info"
+            )
 
             mongo_collection.update_one(
                 {"user_id": str(user_id)},
                 {
                     "$addToSet": {"transactions.transactions": {"$each": transactions}},
-                    "$set": {"transactions.to": end_date_str, "date": datetime.datetime.now()}
-                }
+                    "$set": {
+                        "transactions.to": end_date_str,
+                        "date": datetime.datetime.now(),
+                    },
+                },
             )
 
             mongo_timer_end = datetime.datetime.now()
             log_this(f"\tDB insertion took: {mongo_timer_end-mongo_timer}", "info")
         else:
-            log_this("\tGot to hourly db insertion but no transactions were found for the date range", "warning")
+            log_this(
+                "\tGot to hourly db insertion but no transactions were found for the date range",
+                "warning"
+            )
     else:
         log_this("Could not upload transactions to mongodb", "error")
 
@@ -99,4 +117,7 @@ close_backend_connection()
 close_pymongo_connection()
 
 process_end = datetime.datetime.now()
-log_this(f"Transaction Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n", "info")
+log_this(
+    f"Transaction Sync: {process_start} -> {process_end} | Total run time: {process_end-process_start}\n\n\n",
+    "info"
+)
